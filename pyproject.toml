@@ -1,0 +1,12 @@
+[project]
+name = "potplayer-live"
+version = "0.1.0"
+description = "解析直播平台(当前虎牙)的真实直播流并用 PotPlayer 播放，修复虎牙 flv 约 2 分钟断流"
+readme = "README.md"
+requires-python = ">=3.9"
+# 仅使用 Python 标准库，无第三方依赖
+dependencies = []
+
+[tool.uv]
+# 扁平多模块脚本，不作为可安装包构建，uv 只负责解释器/环境
+package = false
