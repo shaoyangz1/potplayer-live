@@ -214,5 +214,95 @@ class TestWaitReady(unittest.TestCase):
             cli._probe = orig
 
 
+import io
+
+
+def _flv_header():
+    """FLV 文件头(9) + PreviousTagSize0(4) = 13 字节。"""
+    return b"FLV\x01\x05\x00\x00\x00\x09" + b"\x00\x00\x00\x00"
+
+
+def _flv_tag(ts=0, dsize=1, ttype=8, data=b"\x00"):
+    """构造一个最小 FLV tag:11 字节 tag 头 + data(dsize) + 4 字节 PreviousTagSize。"""
+    payload = data[:dsize].ljust(dsize, b"\x00")
+    th = bytes([ttype,
+                (dsize >> 16) & 0xFF, (dsize >> 8) & 0xFF, dsize & 0xFF,
+                (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF,
+                (ts >> 24) & 0xFF,
+                0, 0, 0])
+    return th + payload + b"\x00\x00\x00\x00"
+
+
+def _segment(*tags):
+    """一段完整 flv 流(文件头 + 若干 tag),供 open_fn 返回。BytesIO 具备 read/close。"""
+    return io.BytesIO(_flv_header() + b"".join(tags))
+
+
+class _FakeUpstream:
+    """受控上游:script 里 'fail' 表示这次连接抛超时,BytesIO 表示返回一段流。"""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.calls = 0
+
+    def __call__(self, url, headers):
+        item = self.script[min(self.calls, len(self.script) - 1)]
+        self.calls += 1
+        if item == "fail":
+            raise TimeoutError("The read operation timed out")
+        return item
+
+
+class TestRelayReconnect(unittest.TestCase):
+    """serve 代理的跨断流自愈:上游暂时不可用应持续重试到恢复,而不是放弃退出。"""
+
+    def test_recovers_after_transient_open_failures(self):
+        # 上游前 3 次连接失败(超过旧的 len*2 阈值),第 4 次恢复。代理应续播,而非放弃。
+        out = bytearray()
+
+        def write(b):
+            out.extend(b)
+            if len(out) > 13:                 # 首段头(13B)之后收到数据 → 模拟客户端关闭,终止
+                raise ConnectionError("client closed")
+
+        good = _segment(_flv_tag(ts=100))
+        up = _FakeUpstream(["fail", "fail", "fail", good])
+        server.relay_flv(write, lambda: None, ["u0"], {}, "room", None,
+                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
+                         sleep_fn=lambda *_: None)
+        self.assertIn(b"FLV", bytes(out), "恢复后应把 FLV 头转发给下游,而不是在失败上限处放弃")
+        self.assertGreaterEqual(up.calls, 4, "应重试到第 4 次成功,而不是在失败上限处放弃")
+
+    def test_gives_up_after_deadline_when_upstream_never_recovers(self):
+        # 上游永远连不上:应在超过 retry_deadline 后干净退出,而不是无限重试。
+        out = bytearray()
+        clock = {"t": 0.0}
+
+        def fake_clock():
+            return clock["t"]
+
+        def fake_sleep(_):
+            clock["t"] += 5.0                 # 每次退避推进 5s 虚拟时间
+
+        up = _FakeUpstream(["fail"])          # 永远失败
+        server.relay_flv(out.extend, lambda: None, ["u0"], {}, "room", None,
+                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
+                         retry_deadline=30.0, sleep_fn=fake_sleep, clock=fake_clock)
+        self.assertLess(up.calls, 20, "超过时限应退出,不能无限重试")
+        self.assertEqual(bytes(out), b"", "从未连上,不应有任何输出")
+
+    def test_client_disconnect_stops_immediately(self):
+        # 客户端关播放器(write 抛 ConnectionError)应立即结束,不再重试上游。
+        def write(_):
+            raise ConnectionError("client closed")
+
+        good = _segment(_flv_tag(ts=100))
+        up = _FakeUpstream([good, good, good])
+        server.relay_flv(write, lambda: None, ["u0"], {}, "room", None,
+                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
+                         sleep_fn=lambda *_: None)
+        self.assertEqual(up.calls, 1, "客户端断开后应立即停止,不应再连上游")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

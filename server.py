@@ -94,6 +94,152 @@ def open_stream(url, headers):
     return urllib.request.urlopen(req, timeout=15)
 
 
+# 上游断连后的重连退避与放弃阈值
+INITIAL_BACKOFF = 0.5   # 首次重试前的退避(秒),之后指数增长
+BACKOFF_MAX = 3.0       # 退避上限(秒)
+RETRY_DEADLINE = 120.0  # 上游持续不可用超过此秒数才放弃退出(<=0 视为一直重试)
+
+
+def relay_flv(write, flush, urls, headers, room, quality,
+              resolve_fn=resolve_lines, open_fn=open_stream,
+              retry_deadline=RETRY_DEADLINE, sleep_fn=time.sleep, clock=time.monotonic):
+    """把上游 flv 段持续转发给下游(write/flush 回调),跨平台断流自动重连续播。
+
+    上游暂时不可用时退避重试(而非几次失败就放弃);仅当持续失败超过 retry_deadline 秒
+    才干净退出,让端口被 watchdog 回收。客户端关播放器(write 抛 ConnectionError)则立即结束。
+    write/flush/open_fn/resolve_fn/sleep_fn/clock 可注入,便于不触网测试。"""
+    GAP = 40            # 段间隔(ms),仅换线/时钟跳变时用于接续
+    WINDOW = 60000      # ms,原始 ts 相差在此以内视为“同一时钟”
+    out_base = None     # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
+    last_src = None     # 已输出的最大原始时间戳(跨段,用于丢重复回放)
+    last_out = -GAP     # 已输出的最大输出时间戳
+    first_segment = True
+    seg = 0
+    line = 0
+    fail_since = None   # 上游连续不可用的起始时刻;成功输出数据即清空
+    backoff = INITIAL_BACKOFF
+
+    def wait_or_giveup(reason):
+        """推进失败计时:超过时限返回 True(应退出),否则退避+重解析后返回 False(继续重试)。"""
+        nonlocal fail_since, backoff, line, urls, headers
+        if fail_since is None:
+            fail_since = clock()
+        elif retry_deadline > 0 and clock() - fail_since > retry_deadline:
+            print(f"[seg {seg}] 上游持续不可用超过 {retry_deadline:.0f}s（{reason}），退出转流。",
+                  flush=True)
+            return True
+        line += 1
+        sleep_fn(min(backoff, BACKOFF_MAX))
+        backoff = min(backoff * 2, BACKOFF_MAX)
+        # 退避后重解析拿全新签名地址(避免一直连失效的旧线路)
+        try:
+            urls, _, headers = resolve_fn(room, quality)
+        except Exception as e:
+            print(f"[seg {seg}] 重解析失败: {e!r}", flush=True)
+        return False
+
+    while True:
+        url = urls[line % len(urls)]
+        try:
+            fp = open_fn(url, headers)
+        except Exception as e:
+            print(f"[seg {seg}] 线路{line % len(urls)} open 失败: {e!r}", flush=True)
+            if wait_or_giveup("连接失败"):
+                return
+            continue
+        seg += 1
+        print(f"[seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True)
+
+        # FLV 文件头(9)+PreviousTagSize0(4)：仅第一段转发，后续段丢弃
+        header = read_exact(fp, 13)
+        if len(header) < 13:
+            print(f"[seg {seg}] 连接后未读到完整 FLV 头(len={len(header)})，重连", flush=True)
+            try:
+                fp.close()
+            except Exception:
+                pass
+            if wait_or_giveup("连接后无数据"):
+                return
+            continue
+        if first_segment:
+            try:
+                write(header)
+                flush()
+            except ConnectionError:  # 含 Broken/Reset/Aborted(Windows 断开为 Aborted)
+                return
+            first_segment = False
+
+        resume = last_src   # 本段丢弃阈值:原始 ts <= resume 的都是重复回放
+        first_tag = True
+        dropped = 0         # 本段丢弃的重复帧数(用于日志)
+        drop_from = None    # 首个被丢帧的原始 ts,用于算丢弃时长
+        try:
+            while True:
+                th = read_exact(fp, 11)
+                if len(th) < 11:
+                    break  # 本段结束（平台断开）→ 跳出去重连
+                dsize = (th[1] << 16) | (th[2] << 8) | th[3]
+                ts = (th[7] << 24) | (th[4] << 16) | (th[5] << 8) | th[6]
+                data = read_exact(fp, dsize)
+                prev = read_exact(fp, 4)
+                if len(data) < dsize or len(prev) < 4:
+                    break
+
+                if first_tag:
+                    first_tag = False
+                    if out_base is None:
+                        out_base = -ts          # 首段:输出从 0 开始
+                        resume = None            # 首段不丢弃
+                    elif last_src is not None and abs(ts - last_src) > WINDOW:
+                        # 时钟跳变(多半换了 CDN 线路)→ 重新基线,本段整体接到末尾之后
+                        out_base = (last_out + GAP) - ts
+                        resume = None
+                # 平台新连接开头会重发几秒“回看缓冲”,原始 ts 连续,
+                # 丢掉 ts <= 上段末尾 的重复帧(音视频一并丢),避免回放
+                if resume is not None and ts <= resume:
+                    if drop_from is None:
+                        drop_from = ts
+                    dropped += 1
+                    continue
+                if dropped:
+                    print(f"[seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
+                          f"从 out_ts={ts + out_base} 续播", flush=True)
+                    dropped = 0
+
+                new_ts = ts + out_base
+                nh = bytes([th[0],
+                            (dsize >> 16) & 0xFF, (dsize >> 8) & 0xFF, dsize & 0xFF,
+                            (new_ts >> 16) & 0xFF, (new_ts >> 8) & 0xFF, new_ts & 0xFF,
+                            (new_ts >> 24) & 0xFF,
+                            th[8], th[9], th[10]])
+                try:
+                    write(nh)
+                    write(data)
+                    write(prev)
+                except ConnectionError:
+                    return  # 播放器关了 → 结束(Windows 为 ConnectionAbortedError)
+                fail_since = None            # 成功输出数据 → 上游确已恢复,清空失败计时
+                backoff = INITIAL_BACKOFF
+                if new_ts > last_out:
+                    last_out = new_ts
+                if last_src is None or ts > last_src:
+                    last_src = ts
+        except Exception as e:
+            print(f"[seg {seg}] 读取异常: {e!r}", flush=True)
+        finally:
+            try:
+                fp.close()
+            except Exception:
+                pass
+
+        # 段结束后重新解析拿全新签名地址(沿用同一 quality)
+        try:
+            urls, _, headers = resolve_fn(room, quality)
+            print(f"[seg {seg}] 段结束，已重解析，线路数={len(urls)}", flush=True)
+        except Exception as e:
+            print(f"[seg {seg}] 段结束，重解析失败: {e!r}(沿用旧地址重连)", flush=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -143,106 +289,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "video/x-flv")
         self.send_header("Connection", "close")
         self.end_headers()
-        w = self.wfile
-
-        GAP = 40            # 段间隔(ms),仅换线/时钟跳变时用于接续
-        WINDOW = 60000      # ms,原始 ts 相差在此以内视为“同一时钟”
-        out_base = None     # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
-        last_src = None     # 已输出的最大原始时间戳(跨段,用于丢重复回放)
-        last_out = -GAP     # 已输出的最大输出时间戳
-        first_segment = True
-        seg = 0
-        line = 0
-        while True:
-            url = urls[line % len(urls)]
-            try:
-                fp = open_stream(url, headers)
-            except Exception:
-                line += 1
-                if line > len(urls) * 2:
-                    break
-                continue
-            seg += 1
-            print(f"[seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True)
-
-            # FLV 文件头(9)+PreviousTagSize0(4)：仅第一段转发，后续段丢弃
-            header = read_exact(fp, 13)
-            if len(header) < 13:
-                break
-            if first_segment:
-                try:
-                    w.write(header)
-                    w.flush()
-                except ConnectionError:  # 含 Broken/Reset/Aborted(Windows 断开为 Aborted)
-                    return
-                first_segment = False
-
-            resume = last_src   # 本段丢弃阈值:原始 ts <= resume 的都是重复回放
-            first_tag = True
-            dropped = 0         # 本段丢弃的重复帧数(用于日志)
-            drop_from = None    # 首个被丢帧的原始 ts,用于算丢弃时长
-            try:
-                while True:
-                    th = read_exact(fp, 11)
-                    if len(th) < 11:
-                        break  # 本段结束（平台断开）→ 跳出去重连
-                    dsize = (th[1] << 16) | (th[2] << 8) | th[3]
-                    ts = (th[7] << 24) | (th[4] << 16) | (th[5] << 8) | th[6]
-                    data = read_exact(fp, dsize)
-                    prev = read_exact(fp, 4)
-                    if len(data) < dsize or len(prev) < 4:
-                        break
-
-                    if first_tag:
-                        first_tag = False
-                        if out_base is None:
-                            out_base = -ts          # 首段:输出从 0 开始
-                            resume = None            # 首段不丢弃
-                        elif last_src is not None and abs(ts - last_src) > WINDOW:
-                            # 时钟跳变(多半换了 CDN 线路)→ 重新基线,本段整体接到末尾之后
-                            out_base = (last_out + GAP) - ts
-                            resume = None
-                    # 平台新连接开头会重发几秒“回看缓冲”,原始 ts 连续,
-                    # 丢掉 ts <= 上段末尾 的重复帧(音视频一并丢),避免回放
-                    if resume is not None and ts <= resume:
-                        if drop_from is None:
-                            drop_from = ts
-                        dropped += 1
-                        continue
-                    if dropped:
-                        print(f"[seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
-                              f"从 out_ts={ts + out_base} 续播", flush=True)
-                        dropped = 0
-
-                    new_ts = ts + out_base
-                    nh = bytes([th[0],
-                                (dsize >> 16) & 0xFF, (dsize >> 8) & 0xFF, dsize & 0xFF,
-                                (new_ts >> 16) & 0xFF, (new_ts >> 8) & 0xFF, new_ts & 0xFF,
-                                (new_ts >> 24) & 0xFF,
-                                th[8], th[9], th[10]])
-                    try:
-                        w.write(nh)
-                        w.write(data)
-                        w.write(prev)
-                    except ConnectionError:
-                        return  # 播放器关了 → 结束(Windows 为 ConnectionAbortedError)
-                    if new_ts > last_out:
-                        last_out = new_ts
-                    if last_src is None or ts > last_src:
-                        last_src = ts
-            except Exception as e:
-                print(f"[seg {seg}] 读取异常: {e!r}", flush=True)
-            finally:
-                try:
-                    fp.close()
-                except Exception:
-                    pass
-
-            # 段结束后重新解析拿全新签名地址(沿用同一 quality)
-            try:
-                urls, _, headers = resolve_lines(room, quality)
-            except Exception:
-                pass
+        relay_flv(self.wfile.write, self.wfile.flush, urls, headers, room, quality)
 
 
 def watchdog(httpd):
