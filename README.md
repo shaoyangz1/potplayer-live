@@ -20,6 +20,20 @@ uv run --python 3.12 cli.py https://www.huya.com/lpl
 python cli.py https://www.huya.com/lpl
 ```
 
+## 浏览分区(挑房间看)
+
+不知道看哪个房间时,给一个分区,列出正在直播的房间,选序号直接看:
+
+```bash
+python cli.py https://www.huya.com/g/lol   # 分区页地址
+python cli.py 英雄联盟                       # 中文名
+python cli.py lol                            # 别名
+python cli.py 1                              # 分区 gid
+```
+
+列出后输入序号(回车看第 1 个,q 退出)即复用 serve 流程播放。
+`--pages N` 控制抓取页数(每页约 9 个,默认 3)。
+
 ## 四种模式(`--mode`)
 
 | 模式 | 说明 |
@@ -37,6 +51,7 @@ python cli.py https://www.huya.com/lpl
 --title T     自定义 PotPlayer 窗口标题,默认用房间名(主播名)
 --port P      serve 模式端口,默认 8787
 --grace S     serve 模式无连接空闲 S 秒后自动退出,<=0 常驻,默认 180
+--pages N     分区浏览抓取页数(每页约 9 个房间),默认 3
 ```
 
 房间地址支持别名(`https://www.huya.com/lpl`)与纯房间号(`https://www.huya.com/660000`)。

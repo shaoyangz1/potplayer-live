@@ -21,6 +21,7 @@ import common
 import huya
 import server
 import cli
+import sites
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
@@ -302,6 +303,129 @@ class TestRelayReconnect(unittest.TestCase):
                          resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
                          sleep_fn=lambda *_: None)
         self.assertEqual(up.calls, 1, "客户端断开后应立即停止,不应再连上游")
+
+
+class TestHttpHelpers(unittest.TestCase):
+    def test_gunzip_passthrough_plain(self):
+        self.assertEqual(common._gunzip(b'{"a":1}'), b'{"a":1}')
+
+    def test_gunzip_decompresses_gzip(self):
+        import gzip as _gz
+        self.assertEqual(common._gunzip(_gz.compress(b"hello")), b"hello")
+
+    def test_decode_text_utf8(self):
+        self.assertEqual(common.decode_text("英雄联盟".encode("utf-8")), "英雄联盟")
+
+    def test_decode_text_gbk_fallback(self):
+        # GBK 字节序列不是合法 utf-8(在"雄"处触发),应回退 gb18030 得到正确中文
+        self.assertEqual(common.decode_text("英雄联盟".encode("gb18030")), "英雄联盟")
+
+
+class TestCategories(unittest.TestCase):
+    def test_parse_categories_extracts_fields(self):
+        import json as _j
+        raw = _j.dumps({"data": [
+            {"gid": 1, "gameHostName": "lol", "gameFullName": "英雄联盟", "totalCount": 123},
+            {"gid": 2, "gameHostName": "", "gameFullName": "", "totalCount": 0},
+        ]}).encode("utf-8")
+        cats = huya._parse_categories(raw)
+        self.assertEqual(cats[0], {"gid": 1, "host": "lol", "name": "英雄联盟", "online": 123})
+        self.assertEqual(cats[1]["gid"], 2)
+
+    def test_parse_categories_skips_missing_gid(self):
+        import json as _j
+        raw = _j.dumps({"data": [{"gameHostName": "x"}]}).encode("utf-8")
+        self.assertEqual(huya._parse_categories(raw), [])
+
+
+class TestResolveCategory(unittest.TestCase):
+    CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
+
+    def test_gid_passthrough_with_display(self):
+        self.assertEqual(huya.resolve_category("1", categories=self.CATS), ("1", "英雄联盟"))
+
+    def test_alias_passthrough_with_display(self):
+        self.assertEqual(huya.resolve_category("lol", categories=self.CATS), ("lol", "英雄联盟"))
+
+    def test_chinese_name_maps_to_alias(self):
+        self.assertEqual(huya.resolve_category("英雄联盟", categories=self.CATS), ("lol", "英雄联盟"))
+
+    def test_unknown_passthrough_uses_ident_as_display(self):
+        self.assertEqual(huya.resolve_category("wzry", categories=[]), ("wzry", "wzry"))
+
+
+def _card(room, nick, viewers, title):
+    return (f'<a href="/{room}" class="qqqq g-link"><div class="g-item">'
+            f'<span class="nick">{nick}</span>'
+            f'<span class="viewer-count">{viewers}</span>'
+            f'<p class="title">{title}</p></div></a>')
+
+
+class TestListCategory(unittest.TestCase):
+    CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
+
+    def test_parse_rooms_fields(self):
+        html = "<html>" + _card("333003", "主播A", "911万", "标题A") + "</html>"
+        self.assertEqual(huya._parse_rooms(html),
+                         [{"room": "333003", "nick": "主播A", "viewers": "911万", "title": "标题A"}])
+
+    def test_list_category_dedup_preserves_order(self):
+        pages = {1: _card("a", "na", "9万", "ta") + _card("b", "nb", "8万", "tb"),
+                 2: _card("b", "nb", "8万", "tb") + _card("c", "nc", "7万", "tc")}
+        res = huya.list_category("lol", pages=3, categories=self.CATS,
+                                 fetch=lambda slug, page: pages.get(page, ""))
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a", "b", "c"])
+        self.assertEqual(res["name"], "英雄联盟")
+        self.assertEqual(res["slug"], "lol")
+
+    def test_list_category_stops_on_empty_page(self):
+        pages = {1: _card("a", "na", "9万", "ta")}
+        res = huya.list_category("lol", pages=5, categories=self.CATS,
+                                 fetch=lambda slug, page: pages.get(page, ""))
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
+
+
+class TestSitesCategory(unittest.TestCase):
+    def test_is_category_g_url(self):
+        self.assertTrue(sites.is_category("https://www.huya.com/g/lol"))
+
+    def test_is_category_room_url_false(self):
+        self.assertFalse(sites.is_category("https://www.huya.com/lpl"))
+        self.assertFalse(sites.is_category("https://www.huya.com/660000"))
+
+    def test_is_category_bare_string(self):
+        self.assertTrue(sites.is_category("英雄联盟"))
+        self.assertTrue(sites.is_category("lol"))
+        self.assertTrue(sites.is_category("1"))
+
+    def test_category_slug_from_g_url(self):
+        self.assertEqual(sites.category_slug("https://www.huya.com/g/lol"), "lol")
+
+    def test_category_slug_bare(self):
+        self.assertEqual(sites.category_slug("英雄联盟"), "英雄联盟")
+
+
+class TestChooseIndex(unittest.TestCase):
+    def test_enter_selects_first(self):
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: ""), 0)
+
+    def test_number_selects_that_index(self):
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: "3"), 2)
+
+    def test_q_cancels(self):
+        self.assertIsNone(cli._choose_index(5, True, input_fn=lambda p: "q"))
+
+    def test_non_interactive_returns_none(self):
+        self.assertIsNone(cli._choose_index(5, False))
+
+    def test_out_of_range_then_valid(self):
+        seq = iter(["99", "2"])
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: next(seq)), 1)
+
+    def test_eof_cancels(self):
+        def boom(_):
+            raise EOFError
+        self.assertIsNone(cli._choose_index(5, True, input_fn=boom))
 
 
 if __name__ == "__main__":
