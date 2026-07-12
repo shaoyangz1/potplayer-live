@@ -405,5 +405,28 @@ class TestSitesCategory(unittest.TestCase):
         self.assertEqual(sites.category_slug("英雄联盟"), "英雄联盟")
 
 
+class TestChooseIndex(unittest.TestCase):
+    def test_enter_selects_first(self):
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: ""), 0)
+
+    def test_number_selects_that_index(self):
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: "3"), 2)
+
+    def test_q_cancels(self):
+        self.assertIsNone(cli._choose_index(5, True, input_fn=lambda p: "q"))
+
+    def test_non_interactive_returns_none(self):
+        self.assertIsNone(cli._choose_index(5, False))
+
+    def test_out_of_range_then_valid(self):
+        seq = iter(["99", "2"])
+        self.assertEqual(cli._choose_index(5, True, input_fn=lambda p: next(seq)), 1)
+
+    def test_eof_cancels(self):
+        def boom(_):
+            raise EOFError
+        self.assertIsNone(cli._choose_index(5, True, input_fn=boom))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

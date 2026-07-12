@@ -154,8 +154,52 @@ def main():
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--grace", type=int, default=180,
                     help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180")
+    ap.add_argument("--pages", type=int, default=3,
+                    help="分区浏览抓取页数(每页约 9 个房间)，默认 3")
     a = ap.parse_args()
+    if sites.is_category(a.url):
+        return browse_category(a)
     return play_room(a.url, a)
+
+
+def _choose_index(n, isatty, input_fn=input):
+    """返回选中的 0-based 索引;回车=第 1 个;q/EOF/非交互=None(取消);越界重试。"""
+    if not isatty:
+        return None
+    while True:
+        try:
+            s = input_fn("选择房间序号(回车看第 1 个,q 退出): ").strip()
+        except EOFError:
+            return None
+        if s == "":
+            return 0
+        if s.lower() == "q":
+            return None
+        if s.isdigit() and 1 <= int(s) <= n:
+            return int(s) - 1
+        print(f"请输入 1~{n} 的序号,或 q 退出。")
+
+
+def browse_category(a):
+    """列出分区在播房间 → 选序号 → 复用 play_room 播放。非交互则只打印带地址的列表。"""
+    data = sites.list_rooms(a.url, pages=a.pages)
+    rooms = data["rooms"]
+    if not rooms:
+        print("没解析到房间(可能分区无人直播或页面改版)。")
+        return 1
+    interactive = sys.stdin.isatty()
+    print(f"{data['name']} · 正在直播(前 {len(rooms)} 个,按人气):")
+    for i, r in enumerate(rooms, 1):
+        line = f"  {i:2}. [{r['viewers']:>7}] {r['nick']}  {r['title']}"
+        if not interactive:
+            line += f"  → https://www.huya.com/{r['room']}"
+        print(line)
+    idx = _choose_index(len(rooms), interactive)
+    if idx is None:
+        if not interactive:
+            print("非交互模式:复制上面的地址直接跑,如 python cli.py https://www.huya.com/<房间>")
+        return 0
+    return play_room(f"https://www.huya.com/{rooms[idx]['room']}", a)
 
 
 def play_room(url, a):
