@@ -60,6 +60,17 @@ set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe
 - **端口探测并发**:某些启用了 TUN/过滤驱动的代理软件会让"连接被拒绝"延迟 ~2s,
   serve 模式并发探测端口,避免首次启动被拖慢。
 
+## 测试
+
+纯标准库、不触网,直接跑:
+
+```bash
+python -m unittest test_potplayer -v
+```
+
+覆盖清晰度选择、m3u 生成、虎牙签名(uid 移位 / wsSecret)、serve 代理的按请求
+`room`/`quality` 解析,以及 cli 的就绪轮询。
+
 ## 免责声明
 
 仅供学习研究,请遵守各平台服务条款,勿用于商业或侵权用途。

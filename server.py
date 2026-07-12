@@ -19,14 +19,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sites
 from common import pick
 
-ROOM = sys.argv[1] if len(sys.argv) > 1 else "https://www.huya.com/lpl"
-PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8787
-QUALITY = sys.argv[3] if len(sys.argv) > 3 else None
-GRACE = int(sys.argv[4]) if len(sys.argv) > 4 else 180  # 秒;<=0 表示永不自动退出
-
+# 全局配置:导入时用安全默认(模块可无副作用导入、便于测试),main 块再从命令行覆盖。
+ROOM = "https://www.huya.com/lpl"   # 默认房间(未带 ?room= 的请求回退到它)
+PORT = 8787
+QUALITY = None                       # 默认清晰度(None/"" = 最高);可被请求 ?quality= 覆盖
+GRACE = 180                          # 空闲自动退出秒数;<=0 表示常驻
 # 默认房间的来源(scheme://host/),供路径网关按同平台拼房间地址
-_o = urllib.parse.urlparse(ROOM)
-_ORIGIN = f"{_o.scheme}://{_o.netloc}/" if _o.netloc else "https://www.huya.com/"
+_ORIGIN = "https://www.huya.com/"
+
+
+def _origin_of(room: str) -> str:
+    o = urllib.parse.urlparse(room)
+    return f"{o.scheme}://{o.netloc}/" if o.netloc else "https://www.huya.com/"
 
 
 def room_from_path(path: str) -> str:
@@ -46,18 +50,32 @@ def room_from_path(path: str) -> str:
         return slug
     return _ORIGIN + slug
 
+
+def parse_request(path: str):
+    """把请求(路径 + 查询串)解析成 (room, quality)。
+
+    room   : ?room=<完整地址> 优先(cli 复用/跨平台时携带);否则按路径 slug 拼(见 room_from_path)。
+    quality: ?quality=<显示名或码率> 优先;否则用启动时的全局默认 QUALITY。
+    如此一个常驻代理即可服务任意房间/清晰度,复用现有代理时也不受其启动参数限制。
+    """
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+    room_q = qs.get("room", [None])[0]           # parse_qs 已解码
+    room = room_q if room_q else room_from_path(path)
+    quality = qs.get("quality", [None])[0]
+    return room, (quality if quality else QUALITY)
+
 # 活动连接计数与最后活动时间,供自动关闭看门狗判断
 _lock = threading.Lock()
 _active = 0
 _last_active = time.time()
 
 
-def resolve_lines(room):
-    """重新解析指定房间,返回 (线路列表[主+备用], 标题, 拉流头)。"""
+def resolve_lines(room, quality=None):
+    """重新解析指定房间,返回 (线路列表[主+备用], 标题, 拉流头)。quality 由调用方按请求给定。"""
     info = sites.parse(room)
     if not info["living"]:
         raise RuntimeError("未开播")
-    _, s = pick(info, QUALITY)
+    _, s = pick(info, quality)
     return [s["url"]] + s["backups"], info["title"], sites.play_headers(room)
 
 
@@ -104,9 +122,9 @@ class Handler(BaseHTTPRequestHandler):
             except ConnectionError:
                 pass
             return
-        room = room_from_path(self.path)
+        room, quality = parse_request(self.path)
         try:
-            urls, title, headers = resolve_lines(room)
+            urls, title, headers = resolve_lines(room, quality)
         except Exception as e:
             self.send_error(503, str(e))
             return
@@ -114,13 +132,13 @@ class Handler(BaseHTTPRequestHandler):
         with _lock:
             _active += 1
         try:
-            self._stream(urls, title, room, headers)
+            self._stream(urls, title, room, headers, quality)
         finally:
             with _lock:
                 _active -= 1
                 _last_active = time.time()
 
-    def _stream(self, urls, title, room, headers):
+    def _stream(self, urls, title, room, headers, quality):
         self.send_response(200)
         self.send_header("Content-Type", "video/x-flv")
         self.send_header("Connection", "close")
@@ -220,9 +238,9 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # 段结束后重新解析拿全新签名地址
+            # 段结束后重新解析拿全新签名地址(沿用同一 quality)
             try:
-                urls, _, headers = resolve_lines(room)
+                urls, _, headers = resolve_lines(room, quality)
             except Exception:
                 pass
 
@@ -240,6 +258,11 @@ def watchdog(httpd):
 
 
 if __name__ == "__main__":
+    ROOM = sys.argv[1] if len(sys.argv) > 1 else ROOM
+    PORT = int(sys.argv[2]) if len(sys.argv) > 2 else PORT
+    QUALITY = sys.argv[3] if len(sys.argv) > 3 else QUALITY
+    GRACE = int(sys.argv[4]) if len(sys.argv) > 4 else GRACE
+    _ORIGIN = _origin_of(ROOM)
     print(f"默认房间: {ROOM}")
     print(f"默认地址: http://127.0.0.1:{PORT}/live.flv")
     print(f"任意房间: http://127.0.0.1:{PORT}/<房间号或别名>.flv  (如 /lpl.flv、/660000.flv)")
