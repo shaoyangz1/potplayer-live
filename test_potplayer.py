@@ -353,5 +353,36 @@ class TestResolveCategory(unittest.TestCase):
         self.assertEqual(huya.resolve_category("wzry", categories=[]), ("wzry", "wzry"))
 
 
+def _card(room, nick, viewers, title):
+    return (f'<a href="/{room}" class="qqqq g-link"><div class="g-item">'
+            f'<span class="nick">{nick}</span>'
+            f'<span class="viewer-count">{viewers}</span>'
+            f'<p class="title">{title}</p></div></a>')
+
+
+class TestListCategory(unittest.TestCase):
+    CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
+
+    def test_parse_rooms_fields(self):
+        html = "<html>" + _card("333003", "主播A", "911万", "标题A") + "</html>"
+        self.assertEqual(huya._parse_rooms(html),
+                         [{"room": "333003", "nick": "主播A", "viewers": "911万", "title": "标题A"}])
+
+    def test_list_category_dedup_preserves_order(self):
+        pages = {1: _card("a", "na", "9万", "ta") + _card("b", "nb", "8万", "tb"),
+                 2: _card("b", "nb", "8万", "tb") + _card("c", "nc", "7万", "tc")}
+        res = huya.list_category("lol", pages=3, categories=self.CATS,
+                                 fetch=lambda slug, page: pages.get(page, ""))
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a", "b", "c"])
+        self.assertEqual(res["name"], "英雄联盟")
+        self.assertEqual(res["slug"], "lol")
+
+    def test_list_category_stops_on_empty_page(self):
+        pages = {1: _card("a", "na", "9万", "ta")}
+        res = huya.list_category("lol", pages=5, categories=self.CATS,
+                                 fetch=lambda slug, page: pages.get(page, ""))
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

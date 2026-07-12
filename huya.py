@@ -88,6 +88,51 @@ def resolve_category(ident, categories=None):
     return ident, ident                       # 目录外:当 slug 透传
 
 
+# 移动端 SSR 分区页(UTF-8),?page=N 翻页;每页约 9 个房间卡片
+ROOM_LIST_URL = "https://m.huya.com/g/{slug}?page={page}"
+_ROOM_CARD = re.compile(
+    r'<a href="/([^"]+)" class="qqqq g-link">.*?'
+    r'<span class="nick">(.*?)</span>.*?'
+    r'<span class="viewer-count">(.*?)</span>.*?'
+    r'<p class="title">(.*?)</p>', re.S)
+
+
+def _parse_rooms(html: str) -> list:
+    """从分区页 HTML 提取房间卡片。"""
+    out = []
+    for room, nick, viewers, title in _ROOM_CARD.findall(html):
+        out.append({"room": room, "nick": nick.strip(),
+                    "viewers": viewers.strip(), "title": title.strip()})
+    return out
+
+
+def list_category(ident, pages=3, categories=None, fetch=None):
+    """列出分区在播房间(按人气,跨页去重保序)。
+
+    返回 {"name": 显示名, "slug": slug, "rooms": [{room, nick, viewers, title}, ...]}。
+    fetch(slug, page)->html 可注入,便于不触网测试。
+    """
+    slug, name = resolve_category(ident, categories=categories)
+    if fetch is None:
+        def fetch(slug, page):
+            return http_get_text(ROOM_LIST_URL.format(slug=slug, page=page),
+                                 headers={"User-Agent": UA_MOBILE})
+    seen, rooms = set(), []
+    for page in range(1, pages + 1):
+        try:
+            html = fetch(slug, page)
+        except Exception:
+            break
+        page_rooms = _parse_rooms(html)
+        if not page_rooms:
+            break                     # 该页无卡片 → 到底了
+        for r in page_rooms:
+            if r["room"] not in seen:
+                seen.add(r["room"])
+                rooms.append(r)
+    return {"name": name, "slug": slug, "rooms": rooms}
+
+
 # 签名 query 参数顺序模板(用来保持各参数顺序一致)
 _EXAMPLE = ("wsSecret=x&wsTime=x&seqid=x&ctype=x&ver=1&fs=bgct&ratio=2000&dMod=mseh-8"
             "&sdkPcdn=1_1&u=x&t=100&sv=2407051433&sdk_sid=x&a_block=0&sf=1")
