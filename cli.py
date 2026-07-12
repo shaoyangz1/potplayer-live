@@ -213,7 +213,7 @@ def play_room(url, a):
         return 1
 
     name, stream = common.pick(info, a.quality)
-    title = a.title or info["nick"] or info["title"]
+    title = a.title or info["nick"] or info["title"]   # 默认用房间名(主播名)
     urls = [stream["url"]] + stream["backups"]
     flv = urls[a.line % len(urls)]
     print(f"清晰度 : {name} (quality={stream['quality']}, 线路数={len(urls)})")
@@ -236,10 +236,12 @@ def play_room(url, a):
         path = os.path.join(d, f"{info['rid']}.m3u")
         with open(path, "w", encoding="utf-8") as f:
             f.write(common.m3u_content(title, stream))
-        _open_potplayer(path, title, is_url=False)
+        _open_potplayer(path, title, is_url=False)  # 标题靠 m3u 内 #EXTINF
         print(f"已用 m3u 播放列表打开:{path}\n卡住时在 PotPlayer 播放列表切换「备用N」。")
         return 0
 
+    # serve 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进本地地址的
+    # query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
     port, reuse = _choose_port(a.port)
     local = _serve_url(port, url, a.quality)
 
@@ -254,11 +256,13 @@ def play_room(url, a):
             print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")
         print(f"本地代理已启动 (PID {srv.pid}，端口 {port})。")
 
+    # 本地代理已带好平台头;标题用 PotPlayer 的「地址\\标题」语法。
+    # 断流自愈全在代理里，PotPlayer 无感。
     _open_potplayer(local, title, is_url=True)
     print(f"地址:{local}")
 
     if reuse:
-        return 0
+        return 0   # 不占管现有代理，开完即返回
     print("直播断流由服务器自动重解析续播，播放器无感。Ctrl+C 结束。")
     try:
         srv.wait()
