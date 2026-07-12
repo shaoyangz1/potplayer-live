@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -44,6 +45,20 @@ def _probe(port):
         return "free" if isinstance(e.reason, ConnectionRefusedError) else "other"
     except Exception:
         return "other"
+
+
+def _wait_ready(port, timeout=10.0):
+    """轮询 __ping__ 直到本 skill 的代理就绪或超时,返回是否就绪。
+
+    替代启动后固定 sleep:解析快时立刻返回(不空等),解析慢时也不会过早打开
+    播放器(固定 sleep 两头都不讨好)。"""
+    deadline = time.monotonic() + timeout
+    while True:
+        if _probe(port) == "ours":
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.15)
 
 
 def _choose_port(base):
@@ -103,6 +118,17 @@ def _potplayer_exe():
     raise RuntimeError(
         "找不到 PotPlayer。请安装后重试，或用环境变量 POTPLAYER 指向 exe，"
         r"例如 set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe")
+
+
+def _serve_url(port, room, quality):
+    """本地代理地址:把完整房间地址与清晰度写进 query。
+
+    这样无论是新起的代理还是复用别处已在跑的代理,server 都按本次请求携带的
+    room/quality 解析——复用时 --quality 不再被忽略,也不受被复用代理启动平台的限制。"""
+    q = {"room": room}
+    if quality:
+        q["quality"] = quality
+    return f"http://127.0.0.1:{port}/live.flv?" + urllib.parse.urlencode(q)
 
 
 def _open_potplayer(target, title, is_url):
@@ -167,11 +193,10 @@ def main():
         print(f"已用 m3u 播放列表打开:{path}\n卡住时在 PotPlayer 播放列表切换「备用N」。")
         return 0
 
-    # serve 模式:优先复用已有代理，否则在空闲端口新起。网关按路径解析房间
-    # （/lpl.flv → 同平台/lpl），一个代理可服务任意房间。
-    slug = urllib.parse.urlparse(a.url).path.strip("/").split("/")[0] or "live"
+    # serve 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进本地地址的
+    # query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
     port, reuse = _choose_port(a.port)
-    local = f"http://127.0.0.1:{port}/{slug}.flv"
+    local = _serve_url(port, a.url, a.quality)
 
     srv = None
     if reuse:
@@ -180,8 +205,8 @@ def main():
         here = os.path.dirname(os.path.abspath(__file__))
         srv = subprocess.Popen([sys.executable, os.path.join(here, "server.py"),
                                 a.url, str(port), a.quality or "", str(a.grace)])
-        import time
-        time.sleep(4)
+        if not _wait_ready(port):
+            print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")
         print(f"本地代理已启动 (PID {srv.pid}，端口 {port})。")
 
     # 本地代理已带好平台头;标题用 PotPlayer 的「地址\标题」语法。
