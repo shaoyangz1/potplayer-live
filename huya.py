@@ -13,7 +13,7 @@ import random
 import base64
 import urllib.parse
 
-from common import http_get, md5
+from common import http_get, http_get_text, decode_text, md5
 
 # 本模块的域名与拉流头
 DOMAINS = ["huya.com"]
@@ -23,6 +23,45 @@ UA_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1
               "(KHTML, like Gecko) Version/17.3.1 Safari/605.1.15")
 REFERER = "https://www.huya.com/"
 PLAY_HEADERS = {"User-Agent": UA_DESKTOP, "Referer": REFERER}
+
+# 分区目录(把中文名/别名映射到 gid);bussType=1 返回热门分区汇总
+CATEGORY_URL = "https://live.cdn.huya.com/liveconfig/game/bussLive?bussType=1"
+
+
+def _parse_categories(raw: bytes) -> list:
+    """解析 bussLive 返回的分区目录。返回 [{gid, host(别名), name(中文名), online}]。"""
+    data = json.loads(decode_text(raw)).get("data", []) or []
+    out = []
+    for c in data:
+        gid = c.get("gid")
+        if gid is None:
+            continue
+        out.append({"gid": int(gid),
+                    "host": c.get("gameHostName") or "",
+                    "name": c.get("gameFullName") or "",
+                    "online": c.get("totalCount")})
+    return out
+
+
+def _categories() -> list:
+    """拉分区目录(gzip 兼容 + 3 次重试)。全部失败则抛最后一次异常。"""
+    last = None
+    for _ in range(3):
+        try:
+            return _parse_categories(http_get(CATEGORY_URL, headers={"User-Agent": UA_MOBILE}))
+        except Exception as e:      # noqa: BLE001 目录不可用不应连累透传路径
+            last = e
+            time.sleep(1)
+    raise last
+
+
+def _safe_categories() -> list:
+    """目录不可用时返回空表(gid/别名/slug 透传不依赖目录)。"""
+    try:
+        return _categories()
+    except Exception:
+        return []
+
 
 # 签名 query 参数顺序模板(用来保持各参数顺序一致)
 _EXAMPLE = ("wsSecret=x&wsTime=x&seqid=x&ctype=x&ver=1&fs=bgct&ratio=2000&dMod=mseh-8"

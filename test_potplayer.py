@@ -320,5 +320,22 @@ class TestHttpHelpers(unittest.TestCase):
         self.assertEqual(common.decode_text("英雄联盟".encode("gb18030")), "英雄联盟")
 
 
+class TestCategories(unittest.TestCase):
+    def test_parse_categories_extracts_fields(self):
+        import json as _j
+        raw = _j.dumps({"data": [
+            {"gid": 1, "gameHostName": "lol", "gameFullName": "英雄联盟", "totalCount": 123},
+            {"gid": 2, "gameHostName": "", "gameFullName": "", "totalCount": 0},
+        ]}).encode("utf-8")
+        cats = huya._parse_categories(raw)
+        self.assertEqual(cats[0], {"gid": 1, "host": "lol", "name": "英雄联盟", "online": 123})
+        self.assertEqual(cats[1]["gid"], 2)
+
+    def test_parse_categories_skips_missing_gid(self):
+        import json as _j
+        raw = _j.dumps({"data": [{"gameHostName": "x"}]}).encode("utf-8")
+        self.assertEqual(huya._parse_categories(raw), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
