@@ -46,12 +46,13 @@ def _parse_categories(raw: bytes) -> list:
 def _categories() -> list:
     """拉分区目录(gzip 兼容 + 3 次重试)。全部失败则抛最后一次异常。"""
     last = None
-    for _ in range(3):
+    for i in range(3):
         try:
             return _parse_categories(http_get(CATEGORY_URL, headers={"User-Agent": UA_MOBILE}))
         except Exception as e:      # noqa: BLE001 目录不可用不应连累透传路径
             last = e
-            time.sleep(1)
+            if i < 2:               # 最后一次失败不再空等,直接抛给 _safe_categories 兜底
+                time.sleep(1)
     raise last
 
 

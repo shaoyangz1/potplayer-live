@@ -185,7 +185,9 @@ def browse_category(a):
     data = sites.list_rooms(a.url, pages=a.pages)
     rooms = data["rooms"]
     if not rooms:
-        print("没解析到房间(可能分区无人直播或页面改版)。")
+        print(f"没解析到「{data['name']}」的房间。可能:分区无人直播,或分区名/别名打错"
+              f"(可改用分区页地址 https://www.huya.com/g/<别名> 或 gid)。"
+              f"看单个房间请直接给完整地址 https://www.huya.com/<房间>。")
         return 1
     interactive = sys.stdin.isatty()
     print(f"{data['name']} · 正在直播(前 {len(rooms)} 个,按人气):")

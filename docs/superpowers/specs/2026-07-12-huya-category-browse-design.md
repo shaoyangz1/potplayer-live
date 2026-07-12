@@ -27,7 +27,7 @@ $ python cli.py https://www.huya.com/g/lol
 1. **分区目录** `https://live.cdn.huya.com/liveconfig/game/bussLive?bussType=1`
    - 返回热门分区(约 38–112 个,随时段变):`gid`、`gameHostName`(别名)、`gameFullName`(中文名)、`totalCount`(人气)。
    - 有时返回 gzip(响应体以 `\x1f\x8b` 开头),需兼容解压;偶发网络失败,需重试。
-   - **用途**:把用户给的"中文名/别名"模糊匹配到 `gid`。gid 与 URL slug 不依赖它。
+   - **用途**:把用户给的"中文名/别名"**精确**匹配到 `gid`/别名(仅覆盖热门分区)。gid 与 URL slug 不依赖它。
 
 2. **房间列表** `https://m.huya.com/g/<slug>?page=N`
    - `<slug>` 可为别名(`lol`)或 gid(`1`),二者实测都可用;移动端 SSR 的 HTML,**UTF-8 编码**。
@@ -46,7 +46,7 @@ $ python cli.py https://www.huya.com/g/lol
 - **是 URL 且 path 以 `/g/` 开头** → 分区浏览,`slug` = `/g/` 后第一段。
 - **是裸串(非 http)**:
   - 纯数字 → 当 gid,直接浏览。
-  - 否则 → 查 bussLive 目录,按 `gameFullName`(中文名)或 `gameHostName`(别名)匹配:命中取 gid 浏览;不命中报错:`未识别为分区『X』,看单个房间请给完整地址 https://www.huya.com/<房间>`。
+  - 否则 → 直接当 slug 透传(不阻塞于目录);同时查 bussLive 目录(仅覆盖热门分区)按 `gameFullName`(中文名)/ `gameHostName`(别名)**精确**反查显示名。抓不到房间时提示"分区无人直播或分区名/别名打错",并引导"看单房间请给完整地址",而非直接报错(保留 gid / URL-slug 透传路径)。
 - **其它 URL(非 /g/)** → 房间(现状不变)。
 
 ## 模块改动
