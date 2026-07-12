@@ -21,6 +21,7 @@ import common
 import huya
 import server
 import cli
+import sites
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
@@ -382,6 +383,26 @@ class TestListCategory(unittest.TestCase):
         res = huya.list_category("lol", pages=5, categories=self.CATS,
                                  fetch=lambda slug, page: pages.get(page, ""))
         self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
+
+
+class TestSitesCategory(unittest.TestCase):
+    def test_is_category_g_url(self):
+        self.assertTrue(sites.is_category("https://www.huya.com/g/lol"))
+
+    def test_is_category_room_url_false(self):
+        self.assertFalse(sites.is_category("https://www.huya.com/lpl"))
+        self.assertFalse(sites.is_category("https://www.huya.com/660000"))
+
+    def test_is_category_bare_string(self):
+        self.assertTrue(sites.is_category("英雄联盟"))
+        self.assertTrue(sites.is_category("lol"))
+        self.assertTrue(sites.is_category("1"))
+
+    def test_category_slug_from_g_url(self):
+        self.assertEqual(sites.category_slug("https://www.huya.com/g/lol"), "lol")
+
+    def test_category_slug_bare(self):
+        self.assertEqual(sites.category_slug("英雄联盟"), "英雄联盟")
 
 
 if __name__ == "__main__":
