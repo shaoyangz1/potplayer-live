@@ -304,5 +304,21 @@ class TestRelayReconnect(unittest.TestCase):
         self.assertEqual(up.calls, 1, "客户端断开后应立即停止,不应再连上游")
 
 
+class TestHttpHelpers(unittest.TestCase):
+    def test_gunzip_passthrough_plain(self):
+        self.assertEqual(common._gunzip(b'{"a":1}'), b'{"a":1}')
+
+    def test_gunzip_decompresses_gzip(self):
+        import gzip as _gz
+        self.assertEqual(common._gunzip(_gz.compress(b"hello")), b"hello")
+
+    def test_decode_text_utf8(self):
+        self.assertEqual(common.decode_text("英雄联盟".encode("utf-8")), "英雄联盟")
+
+    def test_decode_text_gbk_fallback(self):
+        # GBK 字节序列不是合法 utf-8(在"雄"处触发),应回退 gb18030 得到正确中文
+        self.assertEqual(common.decode_text("英雄联盟".encode("gb18030")), "英雄联盟")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

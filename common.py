@@ -3,13 +3,33 @@
 
 各平台解析模块(如 huya.py)与派发层(sites.py)共用这里的东西。
 """
+import gzip
 import hashlib
 import urllib.request
 
 
+def _gunzip(raw: bytes) -> bytes:
+    """部分虎牙接口即使未声明也返回 gzip(magic 1f 8b),透明解压。"""
+    if raw[:2] == b"\x1f\x8b":
+        return gzip.decompress(raw)
+    return raw
+
+
 def http_get(url, headers=None, timeout=15):
     req = urllib.request.Request(url, headers=headers or {})
-    return urllib.request.urlopen(req, timeout=timeout).read()
+    return _gunzip(urllib.request.urlopen(req, timeout=timeout).read())
+
+
+def decode_text(raw: bytes) -> str:
+    """虎牙页面多为 UTF-8,个别节点为 GBK;先 utf-8 strict,失败回退 gb18030。"""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("gb18030", "replace")
+
+
+def http_get_text(url, headers=None, timeout=15) -> str:
+    return decode_text(http_get(url, headers, timeout))
 
 
 def md5(s: str) -> str:
