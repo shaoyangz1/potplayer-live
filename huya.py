@@ -63,6 +63,31 @@ def _safe_categories() -> list:
         return []
 
 
+def resolve_category(ident, categories=None):
+    """把分区标识解析成 (slug, 显示名)。
+
+    ident: gid / 别名(gameHostName) / 中文名(gameFullName) / 分区页 URL 的 slug。
+    slug 优先直接用 ident(gid/别名/slug 透传,不阻塞于目录能否命中);
+    中文名输入则查目录匹配到别名或 gid 作 slug。
+    显示名尽量从目录按 gid/别名反查中文名,查不到就用 ident 本身。
+    """
+    ident = str(ident).strip()
+    cats = categories if categories is not None else _safe_categories()
+    by_host = {c["host"].lower(): c for c in cats if c.get("host")}
+    by_gid = {str(c["gid"]): c for c in cats if c.get("gid") is not None}
+    by_name = {c["name"]: c for c in cats if c.get("name")}
+    if ident.isdigit():                       # gid 透传,显示名反查
+        c = by_gid.get(ident)
+        return ident, (c["name"] if c and c["name"] else ident)
+    c = by_host.get(ident.lower())            # 别名透传,显示名反查
+    if c:
+        return ident, (c["name"] or ident)
+    c = by_name.get(ident)                    # 中文名 → 别名/gid 作 slug
+    if c:
+        return (c["host"] or str(c["gid"])), c["name"]
+    return ident, ident                       # 目录外:当 slug 透传
+
+
 # 签名 query 参数顺序模板(用来保持各参数顺序一致)
 _EXAMPLE = ("wsSecret=x&wsTime=x&seqid=x&ctype=x&ver=1&fs=bgct&ratio=2000&dMod=mseh-8"
             "&sdkPcdn=1_1&u=x&t=100&sv=2407051433&sdk_sid=x&a_block=0&sf=1")

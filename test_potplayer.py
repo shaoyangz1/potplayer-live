@@ -337,5 +337,21 @@ class TestCategories(unittest.TestCase):
         self.assertEqual(huya._parse_categories(raw), [])
 
 
+class TestResolveCategory(unittest.TestCase):
+    CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
+
+    def test_gid_passthrough_with_display(self):
+        self.assertEqual(huya.resolve_category("1", categories=self.CATS), ("1", "英雄联盟"))
+
+    def test_alias_passthrough_with_display(self):
+        self.assertEqual(huya.resolve_category("lol", categories=self.CATS), ("lol", "英雄联盟"))
+
+    def test_chinese_name_maps_to_alias(self):
+        self.assertEqual(huya.resolve_category("英雄联盟", categories=self.CATS), ("lol", "英雄联盟"))
+
+    def test_unknown_passthrough_uses_ident_as_display(self):
+        self.assertEqual(huya.resolve_category("wzry", categories=[]), ("wzry", "wzry"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
