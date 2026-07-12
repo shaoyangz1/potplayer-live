@@ -187,6 +187,11 @@ class TestServeUrl(unittest.TestCase):
         pr = urllib.parse.urlparse(cli._serve_url(9000, room, "原画"))
         self.assertEqual(server.parse_request(pr.path + "?" + pr.query), (room, "原画"))
 
+    def test_room_url_stays_readable(self):
+        # :/ 不做百分号编码,常见地址保持可读;闭环仍由 parse_request 保证
+        url = cli._serve_url(8787, "https://www.huya.com/lpl", None)
+        self.assertIn("room=https://www.huya.com/lpl", url)
+
 
 class TestWaitReady(unittest.TestCase):
     """cli 启动 server 后轮询 __ping__ 直到就绪(替代硬编码 sleep)。"""

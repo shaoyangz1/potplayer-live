@@ -128,7 +128,9 @@ def _serve_url(port, room, quality):
     q = {"room": room}
     if quality:
         q["quality"] = quality
-    return f"http://127.0.0.1:{port}/live.flv?" + urllib.parse.urlencode(q)
+    # safe="/:"：放行 : 与 / 不做百分号编码,常见地址保持可读;& ? # 等仍会编码,
+    # 不会破坏 query 结构。server 端 parse_qs 解析不受影响(见 test_roundtrips)。
+    return f"http://127.0.0.1:{port}/live.flv?" + urllib.parse.urlencode(q, safe="/:")
 
 
 def _open_potplayer(target, title, is_url):
