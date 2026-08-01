@@ -15,7 +15,7 @@ import unittest
 import urllib.parse
 
 from potplayer_live import common, server, cli, sites
-from potplayer_live.sites import huya, douyin
+from potplayer_live.sites import huya, douyin, douyu
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
@@ -553,6 +553,106 @@ class TestPlayRoomNoStreams(unittest.TestCase):
         finally:
             sites.parse = orig_parse
         self.assertIn("flv", str(ctx.exception))
+
+
+class TestDouyuAuth(unittest.TestCase):
+    """auth 用独立参考实现比对(不锁魔数),重点验证 enc_time 迭代次数与 is_special/salt 分支。"""
+
+    @staticmethod
+    def _ref(rand_str, key, enc_time, is_special, rid, ts):
+        s = rand_str
+        for _ in range(enc_time):
+            s = hashlib.md5((s + key).encode()).hexdigest()
+        salt = "" if is_special == 1 else f"{rid}{ts}"
+        return hashlib.md5((s + key + salt).encode()).hexdigest()
+
+    def test_special_salt_empty(self):
+        enc = {"rand_str": "abc", "key": "k1", "enc_time": 3, "is_special": 1}
+        self.assertEqual(
+            douyu._auth(enc, "9527", 1700000000),
+            self._ref("abc", "k1", 3, 1, "9527", 1700000000),
+        )
+
+    def test_nonspecial_salt_rid_ts(self):
+        enc = {"rand_str": "xyz", "key": "k2", "enc_time": 5, "is_special": 0}
+        self.assertEqual(
+            douyu._auth(enc, "6666", 1700000001),
+            self._ref("xyz", "k2", 5, 0, "6666", 1700000001),
+        )
+
+    def test_is_special_changes_result(self):
+        # 同 rand_str/key/enc_time,仅 is_special 不同 → auth 必须不同(salt 分支生效)
+        base = {"rand_str": "abc", "key": "k1", "enc_time": 3}
+        a = douyu._auth({**base, "is_special": 1}, "9527", 1700000000)
+        b = douyu._auth({**base, "is_special": 0}, "9527", 1700000000)
+        self.assertNotEqual(a, b)
+
+
+class TestDouyuResolveRid(unittest.TestCase):
+    """resolve_rid:fetch 注入假页面,不触网。"""
+
+    def test_numeric_path(self):
+        self.assertEqual(
+            douyu.resolve_rid("https://www.douyu.com/123456", fetch=self._boom), "123456"
+        )
+
+    def test_query_rid(self):
+        self.assertEqual(
+            douyu.resolve_rid("https://www.douyu.com/topic/x?rid=888", fetch=self._boom),
+            "888",
+        )
+
+    def test_alias_pat_vipid(self):
+        html = 'foo "rid":9527,"vipId":0 bar'
+        self.assertEqual(douyu.resolve_rid("https://www.douyu.com/lpl", fetch=lambda u: html), "9527")
+
+    def test_alias_pat_roominfo(self):
+        html = 'x "roomInfo":{"rid":6666,"name":"y"} z'
+        self.assertEqual(douyu.resolve_rid("https://www.douyu.com/king", fetch=lambda u: html), "6666")
+
+    def test_not_found_raises(self):
+        with self.assertRaises(RuntimeError):
+            douyu.resolve_rid("https://www.douyu.com/nobody", fetch=lambda u: "no room here")
+
+    @staticmethod
+    def _boom(url):  # 数字/带 rid 时不应触发抓取
+        raise AssertionError(f"不应抓取: {url}")
+
+
+class TestDouyuPlayUrl(unittest.TestCase):
+    def test_join_strips_trailing_slash(self):
+        data = {"rtmp_url": "https://d.com/live/", "rtmp_live": "abc.flv?t=1"}
+        self.assertEqual(douyu._play_url(data), "https://d.com/live/abc.flv?t=1")
+
+
+class TestDouyuRoomFromBetard(unittest.TestCase):
+    def test_living(self):
+        bet = {"room": {"nickname": "主播", "room_name": "标题",
+                        "show_status": 1, "videoLoop": 0}}
+        r = douyu._room_from_betard(bet)
+        self.assertEqual((r["nick"], r["title"], r["living"]), ("主播", "标题", True))
+
+    def test_off(self):
+        bet = {"room": {"nickname": "主播", "show_status": 2, "videoLoop": 0}}
+        self.assertFalse(douyu._room_from_betard(bet)["living"])
+
+    def test_loop_not_living(self):
+        # 轮播(videoLoop==1)不算开播
+        bet = {"room": {"nickname": "主播", "show_status": 1, "videoLoop": 1}}
+        self.assertFalse(douyu._room_from_betard(bet)["living"])
+
+    def test_title_falls_back_to_nick(self):
+        bet = {"room": {"nickname": "主播", "show_status": 1, "videoLoop": 0}}
+        self.assertEqual(douyu._room_from_betard(bet)["title"], "主播")
+
+
+class TestDouyuDispatch(unittest.TestCase):
+    def test_get_site_routes_to_douyu(self):
+        self.assertIs(sites.get_site("https://www.douyu.com/123456"), douyu)
+
+    def test_play_headers_has_referer(self):
+        h = sites.play_headers("https://www.douyu.com/123456")
+        self.assertEqual(h["Referer"], "https://www.douyu.com")
 
 
 if __name__ == "__main__":

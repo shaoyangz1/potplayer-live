@@ -2,7 +2,7 @@
 
 ## Overview
 
-This tool parses real live streams from streaming platforms and plays them via **PotPlayer** on Windows. Currently supporting Huya (huya.com), it reconstructs the platform's stream-signing algorithm while fixing a disconnection issue that occurred around every 2 minutes.
+This tool parses real live streams from streaming platforms and plays them via **PotPlayer** on Windows. Currently supporting Huya (huya.com), Douyin (live.douyin.com), and Douyu (douyu.com), it reconstructs each platform's stream-signing algorithm while fixing a Huya disconnection issue that occurred around every 2 minutes.
 
 It targets PotPlayer only: the platform parsing runs headless and hands PotPlayer a stable address to play.
 

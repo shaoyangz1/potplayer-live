@@ -1,6 +1,6 @@
 # potplayer-live
 
-用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com)的真实直播流地址,交给
+用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com、斗鱼 douyu.com)的真实直播流地址,交给
 PotPlayer 播放,并修复虎牙 flv **约 2 分钟断流**的问题。
 
 只针对 PotPlayer:平台解析在后台完成,给 PotPlayer 一个稳定地址来播放。
@@ -27,6 +27,9 @@ uv run -m potplayer_live https://www.huya.com/lpl
 
 # 抖音
 uv run -m potplayer_live https://live.douyin.com/123456
+
+# 斗鱼
+uv run -m potplayer_live https://www.douyu.com/123456
 
 # 或直接用 python
 python -m potplayer_live https://www.huya.com/lpl
@@ -84,6 +87,7 @@ potplayer_live/          # 主包
     __init__.py          # 平台派发层(按域名路由)
     huya.py              # 虎牙解析:签名 flv 地址
     douyin.py            # 抖音解析:ttwid cookie / enter 接口
+    douyu.py             # 斗鱼解析:getEncryption + 纯 MD5 auth + getH5PlayV1
 tests/                   # 标准库 unittest,零依赖、不触网
 ```
 

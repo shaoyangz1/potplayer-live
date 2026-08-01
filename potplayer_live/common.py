@@ -16,8 +16,9 @@ def _gunzip(raw: bytes) -> bytes:
     return raw
 
 
-def http_get(url, headers=None, timeout=15):
-    req = urllib.request.Request(url, headers=headers or {})
+def http_get(url, headers=None, timeout=15, data=None):
+    """data 为 None 时 GET,否则 POST(bytes body)。返回已透明解压的原始字节。"""
+    req = urllib.request.Request(url, data=data, headers=headers or {})
     return _gunzip(urllib.request.urlopen(req, timeout=timeout).read())
 
 
