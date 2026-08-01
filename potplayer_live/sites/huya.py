@@ -75,6 +75,14 @@ def _safe_categories() -> list:
         return []
 
 
+def is_category(url: str) -> bool:
+    """分区页判定:http 路径首段为 g(如 /g/lol)才算分区浏览。"""
+    p = urllib.parse.urlparse(url)
+    if p.scheme in ("http", "https"):
+        return p.path.strip("/").split("/")[0] == "g"
+    return False
+
+
 def resolve_category(ident, categories=None):
     """把分区标识解析成 (slug, 显示名)。
 
@@ -153,6 +161,7 @@ def list_category(ident, pages=3, categories=None, fetch=None):
         for r in page_rooms:
             if r["room"] not in seen:
                 seen.add(r["room"])
+                r["url"] = "https://www.huya.com/" + r["room"]  # cli 直接用,不再拼域名
                 rooms.append(r)
     return {"name": name, "slug": slug, "rooms": rooms}
 

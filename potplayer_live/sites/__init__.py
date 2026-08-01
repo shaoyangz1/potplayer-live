@@ -39,13 +39,19 @@ def supported() -> list:
 
 
 def is_category(url: str) -> bool:
-    """判断输入意图是否为分区浏览:分区页 /g/ URL,或非 http 的裸标识(名/别名/gid)。
+    """判断输入意图是否为分区浏览。
 
-    完整房间 URL(非 /g/)返回 False,走单房间流程,现有语义不变。
+    http URL 按域名委派给对应平台模块的 is_category(不支持的平台/房间 URL → False);
+    非 http 的裸标识(名/别名/gid)默认走虎牙分区浏览(现状不变)。
     """
     p = urllib.parse.urlparse(url)
     if p.scheme in ("http", "https"):
-        return p.path.strip("/").split("/")[0] == "g"
+        try:
+            mod = get_site(url)
+        except RuntimeError:
+            return False
+        f = getattr(mod, "is_category", None)
+        return bool(f and f(url))
     return bool(url.strip())
 
 

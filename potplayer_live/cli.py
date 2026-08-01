@@ -208,7 +208,7 @@ def browse_category(a):
     for i, r in enumerate(rooms, 1):
         line = f"  {i:2}. [{r['viewers']:>7}] {r['nick']}  {r['title']}"
         if not interactive:
-            line += f"  → https://www.huya.com/{r['room']}"
+            line += f"  → {r['url']}"
         print(line)
     idx = _choose_index(len(rooms), interactive)
     if idx is None:
@@ -217,7 +217,7 @@ def browse_category(a):
                 "非交互模式:复制上面的地址直接跑,如 python -m potplayer_live https://www.huya.com/<房间>"
             )
         return 0
-    return play_room(f"https://www.huya.com/{rooms[idx]['room']}", a)
+    return play_room(rooms[idx]["url"], a)
 
 
 def play_room(url, a):

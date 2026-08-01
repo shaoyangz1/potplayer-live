@@ -469,6 +469,27 @@ class TestListCategory(unittest.TestCase):
         self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
 
 
+class TestHuyaIsCategory(unittest.TestCase):
+    def test_g_url_is_category(self):
+        self.assertTrue(huya.is_category("https://www.huya.com/g/lol"))
+
+    def test_room_url_not_category(self):
+        self.assertFalse(huya.is_category("https://www.huya.com/lpl"))
+        self.assertFalse(huya.is_category("https://www.huya.com/660000"))
+
+
+class TestHuyaRoomUrl(unittest.TestCase):
+    CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
+
+    def test_rooms_carry_full_url(self):
+        pages = {1: _card("333003", "主播A", "911万", "标题A")}
+        res = huya.list_category(
+            "lol", pages=1, categories=self.CATS,
+            fetch=lambda slug, page: pages.get(page, ""),
+        )
+        self.assertEqual(res["rooms"][0]["url"], "https://www.huya.com/333003")
+
+
 class TestSitesCategory(unittest.TestCase):
     def test_is_category_g_url(self):
         self.assertTrue(sites.is_category("https://www.huya.com/g/lol"))
