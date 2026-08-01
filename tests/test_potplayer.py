@@ -631,6 +631,49 @@ class TestDouyinParseEnter(unittest.TestCase):
         self.assertEqual(info["streams"], {})
 
 
+def _ssr_block(obj):
+    """把 dict 包成一个抖音 SSR flight 块:JSON 双重转义后塞进 pace_f script。
+
+    内层用紧凑分隔符(无空格),对齐真机抖音 SSR 的紧凑 JSON —— web_rid 锚
+    依赖 web_rid":"<rid> 这种无空格形态。
+    """
+    inner = _json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+    literal = _json.dumps(inner, ensure_ascii=False)  # 再转义为 JS 字符串字面量(带 \")
+    return f"<script>self.__pace_f.push([1,{literal}])</script>"
+
+
+class TestDouyinRoomFromHtml(unittest.TestCase):
+    def _html(self, rid="999", status=2):
+        # 页面含两个块:初始空壳(roomInfo={})在前,注水真数据块在后
+        empty = _ssr_block({"roomStore": {"roomInfo": {}}})
+        real = _ssr_block(
+            {"roomStore": {"roomInfo": {"room": {
+                "status": status, "title": "标题",
+                "owner": {"nickname": "主播", "web_rid": rid},
+                "stream_url": {"flv_pull_url": {"FULL_HD1": "http://x/f.flv"}},
+            }}}}
+        )
+        return f"<html>{empty}{real}</html>"
+
+    def test_extract_skips_empty_shell(self):
+        # web_rid 锚应跳过空壳块,命中真数据块
+        room = douyin._room_from_html(self._html(rid="999"), "999")
+        self.assertEqual(room["status"], 2)
+        self.assertEqual(room["title"], "标题")
+
+    def test_missing_web_rid_returns_empty(self):
+        # 页面无该 web_rid(锚落空)→ {} → 上层判未开播
+        self.assertEqual(douyin._room_from_html(self._html(rid="888"), "999"), {})
+
+    def test_extracted_room_feeds_parse_enter(self):
+        # 提取的 room 结构可直接喂 _parse_enter(与 enter data.data[0] 一致)
+        room = douyin._room_from_html(self._html(rid="999"), "999")
+        info = douyin._parse_enter({"data": {"data": [room], "user": {}}}, "999")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["nick"], "主播")
+        self.assertEqual(info["streams"]["原画"]["url"], "http://x/f.flv")
+
+
 class TestDouyinDispatch(unittest.TestCase):
     def test_get_site_routes_to_douyin(self):
         self.assertIs(sites.get_site("https://live.douyin.com/123456"), douyin)

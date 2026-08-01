@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """抖音(live.douyin.com)平台解析模块。
 
-接口见 sites/__init__.py。单房间走 web enter 接口(只需 ttwid cookie);
+接口见 sites/__init__.py。单房间从房间页 SSR 内嵌数据取(见 parse 说明);
 分区浏览走 partition/detail/room 接口。只用 flv(serve 中继不吃 HLS)。
 """
 
@@ -19,14 +19,6 @@ UA_DESKTOP = (
 )
 REFERER = "https://live.douyin.com/"
 PLAY_HEADERS = {"User-Agent": UA_DESKTOP, "Referer": REFERER}
-
-# enter 接口(只带 ttwid cookie 即可,先不做 a_bogus 签名)
-ENTER_URL = (
-    "https://live.douyin.com/webcast/room/web/enter/?aid=6383&app_name=douyin_web"
-    "&live_id=1&device_platform=web&language=zh-CN&enter_from=web_live"
-    "&cookie_enabled=true&browser_platform=Win32&browser_name=Chrome"
-    "&browser_version=120.0.0.0&web_rid={web_rid}&room_id_str=&enter_source="
-)
 
 ROOM_URL = "https://live.douyin.com/{web_rid}"
 
@@ -112,12 +104,72 @@ def _parse_enter(payload: dict, web_rid: str) -> dict:
     return info
 
 
+def _balanced_obj(s: str, start_key: str):
+    """从 start_key 处的 { 起做括号平衡,返回该对象文本(考虑字符串内引号转义)。"""
+    i = s.find(start_key)
+    if i < 0:
+        return None
+    i = s.find("{", i)
+    if i < 0:
+        return None
+    depth = in_str = esc = 0
+    for k in range(i, len(s)):
+        c = s[k]
+        if in_str:
+            if esc:
+                esc = 0
+            elif c == "\\":
+                esc = 1
+            elif c == '"':
+                in_str = 0
+        elif c == '"':
+            in_str = 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i : k + 1]
+    return None
+
+
+def _room_from_html(html: str, web_rid: str) -> dict:
+    """从房间页 SSR 数据提取当前房间对象(roomStore.roomInfo.room)。
+
+    抖音 web enter 接口现要求 a_bogus 签名(ttwid-only 返回空 body),
+    改从页面内嵌的 self.__pace_f flight 块取。页面有两个 roomStore:初始
+    空壳(roomInfo={})与注水后的真数据块;用当前房间 web_rid(全页唯一)
+    锚定真数据块,避免命中空壳或推荐位其他房间。块内为 JSON 转义文本,
+    反转义后按括号平衡抠出 roomInfo.room —— 其结构与 enter 的 data.data[0]
+    一致,故可直接复用 _parse_enter。任一步取不到都返回 {}(→ 未开播)。
+    """
+    anchor = 'web_rid\\":\\"' + web_rid  # 转义态 web_rid":"<rid>,定位真数据块
+    i = html.find(anchor)
+    if i < 0:
+        return {}
+    start = html.rfind("self.__pace_f.push", 0, i)
+    if start < 0:
+        return {}
+    end = html.find("</script>", start)
+    block = html[start : end if end > 0 else len(html)]
+    m = re.search(r'push\(\[\d+,"(.*)"\]\)', block, re.S)  # 贪婪到该块末尾的 "])
+    if not m:
+        return {}
+    try:
+        text = json.loads('"' + m.group(1) + '"')  # JS 字符串字面量 → 真实文本
+        obj = _balanced_obj(text, '"roomInfo"')
+        return (json.loads(obj).get("room") or {}) if obj else {}
+    except json.JSONDecodeError:
+        return {}
+
+
 def parse(url: str) -> dict:
-    """解析抖音房间(网络壳:取 ttwid → 请求 enter → _parse_enter)。"""
+    """解析抖音房间(取 ttwid → 抓房间页 → 提取 SSR 房间数据 → _parse_enter)。"""
     web_rid = resolve_web_rid(url)
     headers = {"User-Agent": UA_DESKTOP, "Referer": REFERER, "Cookie": f"ttwid={_ttwid()}"}
-    payload = json.loads(http_get(ENTER_URL.format(web_rid=web_rid), headers=headers))
-    return _parse_enter(payload, web_rid)
+    html = http_get(ROOM_URL.format(web_rid=web_rid), headers=headers).decode("utf-8", "ignore")
+    room = _room_from_html(html, web_rid)
+    return _parse_enter({"data": {"data": [room], "user": {}}}, web_rid)
 
 
 def is_category(url: str) -> bool:
