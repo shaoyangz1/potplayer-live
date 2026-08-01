@@ -1,7 +1,7 @@
 # potplayer-live
 
 用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com、斗鱼 douyu.com)的真实直播流地址,交给
-PotPlayer 播放,并修复虎牙 flv **约 2 分钟断流**的问题。
+PotPlayer 播放。
 
 只针对 PotPlayer:平台解析在后台完成,给 PotPlayer 一个稳定地址来播放。
 
