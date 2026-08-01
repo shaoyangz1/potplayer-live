@@ -353,9 +353,6 @@ if __name__ == "__main__":
     if ROOM:  # 有默认房间(直接跑 server 或 serve 起)才打启动提示
         print(f"默认房间: {ROOM}")
         print(f"默认地址: http://127.0.0.1:{PORT}/live.flv")
-        print(
-            f"任意房间: http://127.0.0.1:{PORT}/<房间号或别名>.flv  (如 /lpl.flv、/660000.flv)"
-        )
     # 纯中转(ROOM 为空,serve-only 起)时不打提示,由 cli 给更友好的复用指引
     if GRACE > 0:
         print(f"自动关闭: 无连接空闲 {GRACE}s 后退出")
