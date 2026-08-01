@@ -172,6 +172,14 @@ class TestParseRequest(unittest.TestCase):
         path = f"/live.flv?room={urllib.parse.quote(room, safe='')}&quality=2000"
         self.assertEqual(server.parse_request(path), (room, "2000"))
 
+    def test_no_default_room_bare_connect_empty(self):
+        # 纯中转(serve-only):无默认房间时裸连 /live.flv 与 / 解析为空(do_GET 据此报错),
+        # 但带房间号/别名/?room= 仍正常解析。
+        server.ROOM = None
+        self.assertFalse(server.parse_request("/live.flv")[0])
+        self.assertFalse(server.parse_request("/")[0])
+        self.assertTrue(server.parse_request("/lpl.flv")[0])  # 给了别名=指定房间
+
 
 class TestServeUrl(unittest.TestCase):
     """cli 生成的 serve 地址把 room/quality 写进 query,并与 server.parse_request 契约一致。"""

@@ -178,9 +178,10 @@ def main():
 def _serve_only(url, a):
     """只起常驻代理,不解析房间、不拉起 PotPlayer。
 
-    room 可省:省则用 server 内置默认,launcher 各自带 ?room= 即可。所有断流/转流
-    日志都打印在本进程——一处 server 常驻,别处用 --mode serve 复用它来播放(那些
-    命令行只打印复用提示,日志集中在这里),方便同时从多个命令行启动多个播放。"""
+    纯中转:room 省则无默认房间,launcher 各自带 ?room= 播不同房间(裸连 /live.flv
+    会报错,不绑任何直播)。所有断流/转流日志都打印在本进程——一处 server 常驻,别处
+    用 --mode serve 复用它来播放(那些命令行只打印复用提示,日志集中在这里),方便同时
+    从多个命令行启动多个播放。"""
     port, reuse = _choose_port(a.port)
     if reuse:
         print(f"已有代理在端口 {port} 运行,无需重复起(用 --port 指定别的端口可再起一个)。")
@@ -199,7 +200,7 @@ def _serve_only(url, a):
     if not _wait_ready(port):
         print("警告:本地代理未在预期时间内就绪。")
     print(f"本地代理已启动 (PID {srv.pid}，端口 {port})，常驻。")
-    print(f"地址:http://127.0.0.1:{port}/live.flv  (换房间用 ?room=<地址> 或 /<房间号>.flv)")
+    print(f"地址:http://127.0.0.1:{port}/live.flv?room=<房间地址>  (或 /<房间号>.flv、别名 /lpl.flv)")
     print("别处 --mode serve 播放会复用本代理;断流/转流日志都集中在这里。Ctrl+C 结束。")
     try:
         srv.wait()

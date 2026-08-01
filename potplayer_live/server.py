@@ -303,6 +303,10 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             return
         room, quality = parse_request(self.path)
+        if not room:
+            # 纯中转代理(serve-only 起,无默认房间):裸连 /live.flv 无从解析,明确提示
+            self.send_error(400, "未指定房间:请用 /<房间号>.flv 或 /live.flv?room=<完整地址>")
+            return
         try:
             urls, title, headers = resolve_lines(room, quality)
         except Exception as e:
@@ -339,13 +343,17 @@ def watchdog(httpd):
 
 
 if __name__ == "__main__":
-    ROOM = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else ROOM  # 空串=保留内置默认
+    if len(sys.argv) > 1:
+        ROOM = sys.argv[1] or None  # 显式传空串=无默认房间(纯中转,裸连 /live.flv 报错);没传则保留内置默认
     PORT = int(sys.argv[2]) if len(sys.argv) > 2 else PORT
     QUALITY = sys.argv[3] if len(sys.argv) > 3 else QUALITY
     GRACE = int(sys.argv[4]) if len(sys.argv) > 4 else GRACE
-    _ORIGIN = _origin_of(ROOM)
-    print(f"默认房间: {ROOM}")
-    print(f"默认地址: http://127.0.0.1:{PORT}/live.flv")
+    _ORIGIN = _origin_of(ROOM or "")
+    if ROOM:
+        print(f"默认房间: {ROOM}")
+        print(f"默认地址: http://127.0.0.1:{PORT}/live.flv")
+    else:
+        print("无默认房间(纯中转):裸连 /live.flv 会报错,请带 ?room=<地址> 或用 /<房间号>.flv")
     print(
         f"任意房间: http://127.0.0.1:{PORT}/<房间号或别名>.flv  (如 /lpl.flv、/660000.flv)"
     )
