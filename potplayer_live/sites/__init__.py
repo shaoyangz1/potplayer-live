@@ -11,10 +11,10 @@
 
 import urllib.parse
 
-from . import huya
+from . import huya, douyin
 
 # 已支持的平台模块(按需追加,如 douyu、bilibili)
-SITES = [huya]
+SITES = [huya, douyin]
 
 
 def get_site(url: str):

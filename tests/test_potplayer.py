@@ -14,7 +14,7 @@ import unittest
 import urllib.parse
 
 from potplayer_live import common, server, cli, sites
-from potplayer_live.sites import huya
+from potplayer_live.sites import huya, douyin
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
@@ -532,6 +532,78 @@ class TestChooseIndex(unittest.TestCase):
             raise EOFError
 
         self.assertIsNone(cli._choose_index(5, True, input_fn=boom))
+
+
+import json as _json
+
+
+def _enter(status=2, with_sdk=True):
+    room = {"status": status, "title": "早安", "owner": {"nickname": "主播A"}}
+    stream_url = {
+        "flv_pull_url": {"FULL_HD1": "http://x/full.flv", "HD1": "http://x/hd.flv"}
+    }
+    if with_sdk:
+        stream_url["live_core_sdk_data"] = {
+            "pull_data": {
+                "options": {
+                    "qualities": [
+                        {"name": "原画", "sdk_key": "origin", "v_bit_rate": 0},
+                        {"name": "高清", "sdk_key": "sd", "v_bit_rate": 1000},
+                    ]
+                },
+                "stream_data": _json.dumps(
+                    {
+                        "data": {
+                            "origin": {"main": {"flv": "http://x/origin.flv"}},
+                            "sd": {"main": {"flv": "http://x/sd.flv"}},
+                        }
+                    }
+                ),
+            }
+        }
+    room["stream_url"] = stream_url
+    return {"data": {"data": [room], "user": {"nickname": "主播A"}}}
+
+
+class TestDouyinResolveWebRid(unittest.TestCase):
+    def test_last_path_segment(self):
+        self.assertEqual(
+            douyin.resolve_web_rid("https://live.douyin.com/123456"), "123456"
+        )
+
+
+class TestDouyinParseEnter(unittest.TestCase):
+    def test_living_with_sdk_qualities(self):
+        info = douyin._parse_enter(_enter(), "123456")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["rid"], "123456")
+        self.assertEqual(info["nick"], "主播A")
+        self.assertEqual(info["title"], "早安")
+        self.assertEqual(
+            info["streams"]["原画"], {"quality": 0, "url": "http://x/origin.flv", "backups": []}
+        )
+        self.assertEqual(info["streams"]["高清"]["quality"], 1000)
+        self.assertEqual(info["streams"]["高清"]["url"], "http://x/sd.flv")
+
+    def test_not_living_empty_streams(self):
+        info = douyin._parse_enter(_enter(status=0), "1")
+        self.assertFalse(info["living"])
+        self.assertEqual(info["streams"], {})
+
+    def test_fallback_to_flv_pull_url(self):
+        info = douyin._parse_enter(_enter(with_sdk=False), "1")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
+        self.assertEqual(info["streams"]["高清"]["url"], "http://x/hd.flv")
+
+
+class TestDouyinDispatch(unittest.TestCase):
+    def test_get_site_routes_to_douyin(self):
+        self.assertIs(sites.get_site("https://live.douyin.com/123456"), douyin)
+
+    def test_play_headers_has_referer(self):
+        h = sites.play_headers("https://live.douyin.com/123456")
+        self.assertEqual(h["Referer"], "https://live.douyin.com/")
 
 
 if __name__ == "__main__":
