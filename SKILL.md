@@ -2,7 +2,7 @@
 
 ## Overview
 
-This tool parses real live streams from streaming platforms, browses categories to list live rooms, and plays them via **PotPlayer** on Windows. Currently supporting Huya (huya.com), it reconstructs the platform's stream-signing algorithm while fixing a disconnection issue that occurred around every 2 minutes.
+This tool parses real live streams from streaming platforms and plays them via **PotPlayer** on Windows. Currently supporting Huya (huya.com), it reconstructs the platform's stream-signing algorithm while fixing a disconnection issue that occurred around every 2 minutes.
 
 It targets PotPlayer only: the platform parsing runs headless and hands PotPlayer a stable address to play.
 
@@ -33,20 +33,6 @@ The implementation centers on three core mechanisms:
 ## Windows note
 
 The self-healing proxy catches `ConnectionAbortedError` (WSAECONNABORTED / WinError 10053) on the downstream write — the way PotPlayer/Windows signals a client disconnect — so closing the player cleanly stops the proxy instead of triggering an upstream reconnect storm. Port probing in serve mode runs concurrently, so a machine whose loopback refuses closed ports slowly (TUN/filter drivers) still starts quickly.
-
-## Category browsing
-
-Given a category instead of a room, list its live rooms and pick one to play:
-
-```bash
-uv run -m potplayer_live https://www.huya.com/g/lol   # category page URL
-uv run -m potplayer_live 英雄联盟 / lol / 1             # Chinese name / alias / gid
-```
-
-Categories resolve via `bussLive` (name/alias → gid) and rooms are scraped from
-the mobile SSR page `m.huya.com/g/<slug>?page=N` (UTF-8, deduped across pages).
-Selecting a number reuses the normal serve flow. `--pages N` controls how many
-pages to fetch (~9 rooms each, default 3).
 
 ## Usage
 

@@ -36,36 +36,3 @@ def play_headers(url: str) -> dict:
 def supported() -> list:
     """所有已支持的域名,用于提示。"""
     return [d for mod in SITES for d in mod.DOMAINS]
-
-
-def is_category(url: str) -> bool:
-    """判断输入意图是否为分区浏览。
-
-    http URL 按域名委派给对应平台模块的 is_category(不支持的平台/房间 URL → False);
-    非 http 的裸标识(名/别名/gid)默认走虎牙分区浏览(现状不变)。
-    """
-    p = urllib.parse.urlparse(url)
-    if p.scheme in ("http", "https"):
-        try:
-            mod = get_site(url)
-        except RuntimeError:
-            return False
-        f = getattr(mod, "is_category", None)
-        return bool(f and f(url))
-    return bool(url.strip())
-
-
-def category_slug(url: str) -> str:
-    """从分区页 URL 取 slug(/g/ 后第一段);裸串原样返回。"""
-    p = urllib.parse.urlparse(url)
-    if p.scheme in ("http", "https"):
-        parts = p.path.strip("/").split("/")
-        return parts[1] if len(parts) > 1 else ""
-    return url.strip()
-
-
-def list_rooms(url: str, pages: int = 3) -> dict:
-    """列出分区房间。/g/ URL 按域名派发到对应平台;裸串默认虎牙(当前唯一平台)。"""
-    p = urllib.parse.urlparse(url)
-    mod = get_site(url) if p.scheme in ("http", "https") else huya
-    return mod.list_category(category_slug(url), pages=pages)

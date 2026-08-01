@@ -21,18 +21,6 @@ def http_get(url, headers=None, timeout=15):
     return _gunzip(urllib.request.urlopen(req, timeout=timeout).read())
 
 
-def decode_text(raw: bytes) -> str:
-    """虎牙页面多为 UTF-8,个别节点为 GBK;先 utf-8 strict,失败回退 gb18030。"""
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("gb18030", "replace")
-
-
-def http_get_text(url, headers=None, timeout=15) -> str:
-    return decode_text(http_get(url, headers, timeout))
-
-
 def md5(s: str) -> str:
     return hashlib.md5(s.encode()).hexdigest()
 

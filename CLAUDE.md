@@ -24,7 +24,6 @@ tests/               标准库 unittest
 - `DOMAINS`      `list[str]`  匹配的域名关键字(如 `["huya.com"]`)
 - `PLAY_HEADERS` `dict`       拉流 HTTP 头(无则留空 dict)
 - `parse(url)`   `-> dict`    `{rid, nick, title, living, streams{名:{quality,url,backups}}}`
-- 分区浏览另需 `list_category(ident, pages)`(可选)
 
 ## 测试
 
