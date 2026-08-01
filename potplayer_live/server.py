@@ -34,6 +34,15 @@ def _origin_of(room: str) -> str:
     return f"{o.scheme}://{o.netloc}/" if o.netloc else "https://www.huya.com/"
 
 
+def _room_tag(room: str) -> str:
+    """房间地址→简短日志标识:取 path 末段(房间号/别名),空则回退 host。
+
+    一个代理可同时服务多个房间,日志按此标识区分是哪个房间的段。"""
+    p = urllib.parse.urlparse(room)
+    slug = p.path.strip("/").split("/")[-1]
+    return slug or p.netloc or room
+
+
 def room_from_path(path: str) -> str:
     """把请求路径解析成房间地址(按默认房间所在平台)。
 
@@ -122,6 +131,7 @@ def relay_flv(
     上游暂时不可用时退避重试(而非几次失败就放弃);仅当持续失败超过 retry_deadline 秒
     才干净退出,让端口被 watchdog 回收。客户端关播放器(write 抛 ConnectionError)则立即结束。
     write/flush/open_fn/resolve_fn/sleep_fn/clock 可注入,便于不触网测试。"""
+    tag = _room_tag(room)  # 日志前缀:一个代理服务多房间时按房间号区分各自的段
     GAP = 40  # 段间隔(ms),仅换线/时钟跳变时用于接续
     WINDOW = 60000  # ms,原始 ts 相差在此以内视为“同一时钟”
     out_base = None  # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
@@ -140,7 +150,7 @@ def relay_flv(
             fail_since = clock()
         elif retry_deadline > 0 and clock() - fail_since > retry_deadline:
             print(
-                f"[seg {seg}] 上游持续不可用超过 {retry_deadline:.0f}s（{reason}），退出转流。",
+                f"[{tag}][seg {seg}] 上游持续不可用超过 {retry_deadline:.0f}s（{reason}），退出转流。",
                 flush=True,
             )
             return True
@@ -151,7 +161,7 @@ def relay_flv(
         try:
             urls, _, headers = resolve_fn(room, quality)
         except Exception as e:
-            print(f"[seg {seg}] 重解析失败: {e!r}", flush=True)
+            print(f"[{tag}][seg {seg}] 重解析失败: {e!r}", flush=True)
         return False
 
     while True:
@@ -159,20 +169,20 @@ def relay_flv(
         try:
             fp = open_fn(url, headers)
         except Exception as e:
-            print(f"[seg {seg}] 线路{line % len(urls)} open 失败: {e!r}", flush=True)
+            print(f"[{tag}][seg {seg}] 线路{line % len(urls)} open 失败: {e!r}", flush=True)
             if wait_or_giveup("连接失败"):
                 return
             continue
         seg += 1
         print(
-            f"[seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True
+            f"[{tag}][seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True
         )
 
         # FLV 文件头(9)+PreviousTagSize0(4)：仅第一段转发，后续段丢弃
         header = read_exact(fp, 13)
         if len(header) < 13:
             print(
-                f"[seg {seg}] 连接后未读到完整 FLV 头(len={len(header)})，重连",
+                f"[{tag}][seg {seg}] 连接后未读到完整 FLV 头(len={len(header)})，重连",
                 flush=True,
             )
             try:
@@ -224,7 +234,7 @@ def relay_flv(
                     continue
                 if dropped:
                     print(
-                        f"[seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
+                        f"[{tag}][seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
                         f"从 out_ts={ts + out_base} 续播",
                         flush=True,
                     )
@@ -259,7 +269,7 @@ def relay_flv(
                 if last_src is None or ts > last_src:
                     last_src = ts
         except Exception as e:
-            print(f"[seg {seg}] 读取异常: {e!r}", flush=True)
+            print(f"[{tag}][seg {seg}] 读取异常: {e!r}", flush=True)
         finally:
             try:
                 fp.close()
@@ -269,9 +279,9 @@ def relay_flv(
         # 段结束后重新解析拿全新签名地址(沿用同一 quality)
         try:
             urls, _, headers = resolve_fn(room, quality)
-            print(f"[seg {seg}] 段结束，已重解析，线路数={len(urls)}", flush=True)
+            print(f"[{tag}][seg {seg}] 段结束，已重解析，线路数={len(urls)}", flush=True)
         except Exception as e:
-            print(f"[seg {seg}] 段结束，重解析失败: {e!r}(沿用旧地址重连)", flush=True)
+            print(f"[{tag}][seg {seg}] 段结束，重解析失败: {e!r}(沿用旧地址重连)", flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
