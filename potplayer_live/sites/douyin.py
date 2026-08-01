@@ -28,6 +28,23 @@ ENTER_URL = (
     "&browser_version=120.0.0.0&web_rid={web_rid}&room_id_str=&enter_source="
 )
 
+ROOM_URL = "https://live.douyin.com/{web_rid}"
+
+# 分区房间列表接口(非 v2,ttwid-only)
+PARTITION_URL = (
+    "https://live.douyin.com/webcast/web/partition/detail/room/?aid=6383"
+    "&app_name=douyin_web&live_id=1&device_platform=web&count={count}"
+    "&offset={offset}&partition={partition}&partition_type={ptype}&req_from=2"
+)
+
+# 中文别名 → (partition, partition_type)。抖音分区 id 需抓包校准,可能随平台调整。
+# 未命中的分区请用 id,type 形式(如 .../category/720,1)。
+ALIASES = {
+    "英雄联盟": (2701, 1),
+    "王者荣耀": (694, 1),
+    "和平精英": (2354, 1),
+}
+
 # flv_pull_url 无 sdk 清晰度名时的兜底名映射(抖音键名固定)
 _FALLBACK_NAMES = {"FULL_HD1": "原画", "HD1": "高清", "SD1": "标清", "SD2": "流畅"}
 
@@ -100,3 +117,86 @@ def parse(url: str) -> dict:
     headers = {"User-Agent": UA_DESKTOP, "Referer": REFERER, "Cookie": f"ttwid={_ttwid()}"}
     payload = json.loads(http_get(ENTER_URL.format(web_rid=web_rid), headers=headers))
     return _parse_enter(payload, web_rid)
+
+
+def is_category(url: str) -> bool:
+    """分区页判定:http 路径首段为 category(如 /category/720,1)。"""
+    p = urllib.parse.urlparse(url)
+    if p.scheme in ("http", "https"):
+        return p.path.strip("/").split("/")[0] == "category"
+    return False
+
+
+def resolve_partition(ident):
+    """把分区标识解析成 (partition, partition_type, 显示名)。
+
+    "720,1" → 直接拆;中文别名 → 查 ALIASES;都不中 → 抛带引导的错误。
+    """
+    ident = str(ident).strip()
+    if "," in ident:
+        p, t = ident.split(",", 1)
+        return int(p), int(t), ident
+    if ident in ALIASES:
+        p, t = ALIASES[ident]
+        return p, t, ident
+    raise RuntimeError(
+        f"未知抖音分区「{ident}」。请用 id,type 形式,如 "
+        "https://live.douyin.com/category/720,1"
+    )
+
+
+def _parse_rooms(payload: dict) -> list:
+    """从分区接口 JSON 提取房间卡片。纯函数,便于不触网测试。
+
+    web_rid 可能在 item 顶层或 room/owner 下;人气取 total_user_str。
+    """
+    out = []
+    for it in payload.get("data", {}).get("data") or []:
+        room = it.get("room", {}) or {}
+        owner = room.get("owner", {}) or {}
+        web_rid = it.get("web_rid") or room.get("web_rid") or owner.get("web_rid")
+        if not web_rid:
+            continue
+        out.append(
+            {
+                "room": str(web_rid),
+                "nick": owner.get("nickname"),
+                "viewers": room.get("stats", {}).get("total_user_str"),
+                "title": room.get("title"),
+                "url": ROOM_URL.format(web_rid=web_rid),
+            }
+        )
+    return out
+
+
+def list_category(ident, pages=3, count=15, fetch=None):
+    """列出抖音分区在播房间(跨页按 web_rid 去重保序)。
+
+    fetch(partition, partition_type, offset)->dict 可注入,便于不触网测试。
+    """
+    partition, ptype, name = resolve_partition(ident)
+    if fetch is None:
+        ttwid = _ttwid()
+
+        def fetch(partition, ptype, offset):
+            headers = {"User-Agent": UA_DESKTOP, "Referer": REFERER,
+                       "Cookie": f"ttwid={ttwid}"}
+            url = PARTITION_URL.format(
+                count=count, offset=offset, partition=partition, ptype=ptype
+            )
+            return json.loads(http_get(url, headers=headers))
+
+    seen, rooms = set(), []
+    for i in range(pages):
+        try:
+            payload = fetch(partition, ptype, i * count)
+        except Exception:
+            break
+        page_rooms = _parse_rooms(payload)
+        if not page_rooms:
+            break  # 该页无房间 → 到底
+        for r in page_rooms:
+            if r["room"] not in seen:
+                seen.add(r["room"])
+                rooms.append(r)
+    return {"name": name, "slug": ident, "rooms": rooms}

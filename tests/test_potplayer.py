@@ -613,5 +613,81 @@ class TestDouyinDispatch(unittest.TestCase):
         self.assertEqual(h["Referer"], "https://live.douyin.com/")
 
 
+class TestDouyinIsCategory(unittest.TestCase):
+    def test_category_url(self):
+        self.assertTrue(douyin.is_category("https://live.douyin.com/category/720,1"))
+
+    def test_room_url_not_category(self):
+        self.assertFalse(douyin.is_category("https://live.douyin.com/123456"))
+
+
+class TestDouyinResolvePartition(unittest.TestCase):
+    def test_id_type_pair(self):
+        self.assertEqual(douyin.resolve_partition("720,1"), (720, 1, "720,1"))
+
+    def test_alias(self):
+        # ALIASES 命中(用其中一个真实别名;若表为空则本用例应更新)
+        self.assertIn("英雄联盟", douyin.ALIASES)
+        p, t, name = douyin.resolve_partition("英雄联盟")
+        self.assertEqual((p, t), douyin.ALIASES["英雄联盟"])
+        self.assertEqual(name, "英雄联盟")
+
+    def test_unknown_raises(self):
+        with self.assertRaises(RuntimeError):
+            douyin.resolve_partition("不存在的分区")
+
+
+def _dy_room(web_rid, nick, viewers, title):
+    return {
+        "web_rid": web_rid,
+        "room": {
+            "title": title,
+            "owner": {"nickname": nick},
+            "stats": {"total_user_str": viewers},
+        },
+    }
+
+
+class TestDouyinListCategory(unittest.TestCase):
+    def test_parse_rooms_fields_and_url(self):
+        payload = {"data": {"data": [_dy_room("111", "n1", "1.2万", "t1")]}}
+        self.assertEqual(
+            douyin._parse_rooms(payload),
+            [{"room": "111", "nick": "n1", "viewers": "1.2万", "title": "t1",
+              "url": "https://live.douyin.com/111"}],
+        )
+
+    def test_dedup_across_pages_preserves_order(self):
+        pages = {
+            0: {"data": {"data": [_dy_room("a", "na", "9", "ta"), _dy_room("b", "nb", "8", "tb")]}},
+            15: {"data": {"data": [_dy_room("b", "nb", "8", "tb"), _dy_room("c", "nc", "7", "tc")]}},
+        }
+        res = douyin.list_category(
+            "720,1", pages=3, count=15,
+            fetch=lambda p, t, offset: pages.get(offset, {"data": {"data": []}}),
+        )
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a", "b", "c"])
+        self.assertEqual(res["slug"], "720,1")
+
+    def test_stops_on_empty_page(self):
+        res = douyin.list_category(
+            "720,1", pages=5, count=15,
+            fetch=lambda p, t, offset: {"data": {"data": [_dy_room("a", "n", "9", "t")]}}
+            if offset == 0 else {"data": {"data": []}},
+        )
+        self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
+
+
+class TestDouyinCategoryDispatch(unittest.TestCase):
+    def test_sites_is_category_delegates(self):
+        self.assertTrue(sites.is_category("https://live.douyin.com/category/720,1"))
+        self.assertFalse(sites.is_category("https://live.douyin.com/123456"))
+
+    def test_category_slug_extracts_ident(self):
+        self.assertEqual(
+            sites.category_slug("https://live.douyin.com/category/720,1"), "720,1"
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
