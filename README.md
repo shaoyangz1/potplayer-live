@@ -23,19 +23,19 @@ scoop install uv
 
 ```bash
 # 虎牙(推荐:serve 模式,本地代理,自动跨断流自愈)
-uv run -m potplayer_live https://www.huya.com/lpl
+uv run -m potplayer_live --room_id https://www.huya.com/lpl
 
 # 抖音
-uv run -m potplayer_live https://live.douyin.com/123456
+uv run -m potplayer_live --room_id https://live.douyin.com/123456
 
 # 斗鱼
-uv run -m potplayer_live https://www.douyu.com/123456
+uv run -m potplayer_live --room_id https://www.douyu.com/123456
 
 # 哔哩哔哩
-uv run -m potplayer_live https://live.bilibili.com/123456
+uv run -m potplayer_live --room_id https://live.bilibili.com/123456
 
 # 或直接用 python
-python -m potplayer_live https://www.huya.com/lpl
+python -m potplayer_live --room_id https://www.huya.com/lpl
 ```
 
 ## 五种模式(`--mode`)
@@ -60,14 +60,14 @@ uv run -m potplayer_live --mode serve-only
 而断流/转流 `[seg N]` 日志统一打在常驻代理那个窗口:
 
 ```bash
-uv run -m potplayer_live https://www.huya.com/lpl
-uv run -m potplayer_live https://live.douyin.com/123456
+uv run -m potplayer_live --room_id https://www.huya.com/lpl
+uv run -m potplayer_live --room_id https://live.douyin.com/123456
 ```
 
 ## 常用选项
 
 ```
---room_id URL 直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)
+--room_id URL 直播间地址(如 --room_id https://live.bilibili.com/24678311),--mode serve-only 可省
 --quality Q   清晰度显示名或码率(如 "原画" / 蓝光10M / 2000),默认最高
 --line K      direct/m3u 选第 K 条线路(0 起),默认 0
 --title T     自定义 PotPlayer 窗口标题,默认用房间名(主播名)

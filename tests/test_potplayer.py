@@ -648,22 +648,25 @@ class TestServeOnlyMode(unittest.TestCase):
         self.assertTrue(rec["opened"])
         self.assertEqual(rec["popen"][0][-1], "180")
 
-    def test_url_optional_only_for_serve_only(self):
-        # argparse:serve-only 可省地址,其它模式缺地址报错(ap.error → SystemExit)
+    def test_room_id_required_except_serve_only(self):
+        # argparse:serve-only 可省 --room_id;其它模式缺 --room_id 报错;位置参数不再被接受
         import sys as _sys
         saved_argv, saved_play = _sys.argv, cli.play_room
         cli.play_room = lambda url, a: 0
         try:
             _sys.argv = ["prog", "--mode", "serve-only"]
             self.assertEqual(cli.main(), 0)
-            _sys.argv = ["prog", "--mode", "print"]
+            _sys.argv = ["prog", "--mode", "print"]  # 缺 --room_id
+            with self.assertRaises(SystemExit):
+                cli.main()
+            _sys.argv = ["prog", "https://www.huya.com/lpl"]  # 位置参数已废除
             with self.assertRaises(SystemExit):
                 cli.main()
         finally:
             _sys.argv, cli.play_room = saved_argv, saved_play
 
-    def test_room_id_flag_equivalent_to_positional(self):
-        # --room_id 与位置参数等价:都作为房间地址喂给 play_room,mode 默认 serve
+    def test_room_id_is_the_only_room_source(self):
+        # --room_id 作为房间地址喂给 play_room,mode 默认 serve
         import sys as _sys
         saved_argv, saved_play = _sys.argv, cli.play_room
         got = []

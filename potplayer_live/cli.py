@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """potplayer-live 命令行入口(PotPlayer 专用)。
 
-    python -m potplayer_live <房间地址> [选项]
+    python -m potplayer_live --room_id <房间地址> [选项]
 
 选项:
-    --room_id URL   直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)
+    --room_id URL   直播间地址(如 --room_id https://live.bilibili.com/24678311),--mode serve-only 可省
     --quality Q     清晰度显示名或码率(如 "原画" / 蓝光10M / 2000)，默认最高
     --line K        直链/m3u 模式下选第 K 条线路(0 起)，默认 0
     --title T       自定义 PotPlayer 窗口标题，默认用房间名(主播名)
@@ -151,15 +151,9 @@ def _open_potplayer(target, title, is_url):
 def main():
     ap = argparse.ArgumentParser(prog="potplayer-live")
     ap.add_argument(
-        "url",
-        nargs="?",
-        default=None,
-        help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456);--mode serve-only 可省",
-    )
-    ap.add_argument(
         "--room_id",
         default=None,
-        help="直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)",
+        help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456);--mode serve-only 可省",
     )
     ap.add_argument("--quality", default=None)
     ap.add_argument("--line", type=int, default=0)
@@ -176,10 +170,9 @@ def main():
         help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180",
     )
     a = ap.parse_args()
-    room = a.room_id or a.url  # --room_id 与位置参数等价,任一即可(serve-only 都可省)
-    if room is None and a.mode != "serve-only":
-        ap.error("需要房间地址(位置参数或 --room_id;仅 --mode serve-only 可省)")
-    return play_room(room, a)
+    if a.room_id is None and a.mode != "serve-only":
+        ap.error("需要房间地址(--room_id;仅 --mode serve-only 可省)")
+    return play_room(a.room_id, a)
 
 
 def _serve_only(a):
@@ -209,7 +202,7 @@ def _serve_only(a):
     hint = "" if port == 8787 else f" --port {port}"  # 非默认端口才需在播放命令里带上
     print(f"本地代理已启动(端口 {port}),常驻。Ctrl+C 结束。")
     print("另开一个控制台,播放任意房间即会复用本代理(断流/转流日志都集中在这里):")
-    print(f"    uv run -m potplayer_live <房间地址>{hint}")
+    print(f"    uv run -m potplayer_live --room_id <房间地址>{hint}")
     try:
         srv.wait()
     except KeyboardInterrupt:
