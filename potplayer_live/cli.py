@@ -206,9 +206,10 @@ def _serve_only(a):
     )
     if not _wait_ready(port):
         print("警告:本地代理未在预期时间内就绪。")
-    print(f"本地代理已启动 (PID {srv.pid}，端口 {port})，常驻。")
-    print(f"地址:http://127.0.0.1:{port}/live.flv?room=<房间地址>  (或 /<房间号>.flv、别名 /lpl.flv)")
-    print("别处 --mode serve 播放会复用本代理;断流/转流日志都集中在这里。Ctrl+C 结束。")
+    hint = "" if port == 8787 else f" --port {port}"  # 非默认端口才需在播放命令里带上
+    print(f"本地代理已启动(端口 {port}),常驻。Ctrl+C 结束。")
+    print("另开一个控制台,播放任意房间即会复用本代理(断流/转流日志都集中在这里):")
+    print(f"    uv run -m potplayer_live <房间地址>{hint}")
     try:
         srv.wait()
     except KeyboardInterrupt:
