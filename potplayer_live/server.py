@@ -362,4 +362,7 @@ if __name__ == "__main__":
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     if GRACE > 0:
         threading.Thread(target=watchdog, args=(httpd,), daemon=True).start()
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:  # Ctrl+C 干净退出,不打无意义的调用栈
+        print("\n已退出。", flush=True)
