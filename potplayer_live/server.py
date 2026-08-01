@@ -339,7 +339,7 @@ def watchdog(httpd):
 
 
 if __name__ == "__main__":
-    ROOM = sys.argv[1] if len(sys.argv) > 1 else ROOM
+    ROOM = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else ROOM  # 空串=保留内置默认
     PORT = int(sys.argv[2]) if len(sys.argv) > 2 else PORT
     QUALITY = sys.argv[3] if len(sys.argv) > 3 else QUALITY
     GRACE = int(sys.argv[4]) if len(sys.argv) > 4 else GRACE

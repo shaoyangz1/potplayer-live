@@ -43,10 +43,26 @@ python -m potplayer_live https://www.huya.com/lpl
 | 模式 | 说明 |
 |------|------|
 | `serve`(默认) | 本地转流代理,给 PotPlayer 一个固定地址,自动跨 ~2 分钟断流无缝续播 |
-| `serve-only` | 只起代理、不拉起 PotPlayer,打印本地地址供别的播放器手动连,默认常驻 |
+| `serve-only` | 只起一个常驻代理、不拉起 PotPlayer(房间地址可省)。别处用 `serve` 复用它播放,断流/转流日志都集中在这个进程,方便从多个命令行同时开多个播放 |
 | `m3u` | 生成多线路播放列表,卡住时在 PotPlayer 播放列表里切「备用N」线路 |
 | `direct` | 单条 flv 直链,最简单,卡住无法自动恢复 |
 | `print` | 只解析并打印各清晰度/线路地址,不打开播放器 |
+
+### 一个常驻代理，多处复用
+
+先起一个常驻代理(地址可省，日志都集中在这个进程):
+
+```bash
+uv run -m potplayer_live --mode serve-only
+```
+
+再从别的命令行用 `serve` 播放不同房间——都会复用上面的代理，各自打开 PotPlayer，
+而断流/转流 `[seg N]` 日志统一打在常驻代理那个窗口:
+
+```bash
+uv run -m potplayer_live https://www.huya.com/lpl
+uv run -m potplayer_live https://live.douyin.com/123456
+```
 
 ## 常用选项
 

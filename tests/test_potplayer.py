@@ -556,57 +556,91 @@ class TestPlayRoomNoStreams(unittest.TestCase):
 
 
 class TestServeOnlyMode(unittest.TestCase):
-    """serve-only:只起代理不拉起 PotPlayer,且强制常驻(grace=0);serve 对照组仍开播放器。"""
+    """serve-only:纯代理——不解析房间、不开播放器、强制常驻(grace=0)、地址可省,
+    已有代理则报告退出;serve 对照组仍解析并开播放器、透传 grace。全程不触网/不触外设。"""
 
-    def _make_args(self, mode):
+    def _args(self, mode, grace=180):
         import types
         return types.SimpleNamespace(quality=None, mode=mode, line=0,
-                                     title=None, port=8787, grace=180)
+                                     title=None, port=8787, grace=grace)
 
-    def _run(self, mode):
-        """驱动 play_room 的 serve/serve-only 分支,拦掉所有触网/触外设点,
-        返回 (是否开了播放器, 传给 server 的 grace 参数)。"""
-        import types
-        opened = []
-        popen_argv = []
+    class _FakeSrv:
+        pid = 1
+        def wait(self): pass
+        def terminate(self): pass
 
-        class _FakeSrv:
-            pid = 123
-            def wait(self): pass
-            def terminate(self): pass
-
+    def _patch(self, parse_ret=None):
+        """替换 play_room 依赖的触网/触外设点,返回 (记录字典, 还原函数)。"""
+        rec = {"opened": [], "popen": [], "parsed": []}
         saved = (sites.parse, cli._choose_port, cli._wait_ready,
                  cli._open_potplayer, cli.subprocess.Popen)
-        sites.parse = lambda url: {"rid": "1", "nick": "n", "title": "t", "living": True,
-                                   "streams": {"原画": {"quality": 10000, "url": "u", "backups": []}}}
-        cli._choose_port = lambda base: (base, False)   # 新起(非复用),不真扫端口
+
+        def fake_parse(url):
+            rec["parsed"].append(url)
+            return parse_ret
+        sites.parse = fake_parse
+        cli._choose_port = lambda base: (base, False)   # 新起,不真扫端口
         cli._wait_ready = lambda port, timeout=10.0: True
-        cli._open_potplayer = lambda *a, **kw: opened.append(a)
-        def _fake_popen(argv):
-            popen_argv.append(argv)
-            return _FakeSrv()
-        cli.subprocess.Popen = _fake_popen
+        cli._open_potplayer = lambda *a, **kw: rec["opened"].append(a)
+        cli.subprocess.Popen = lambda argv: (rec["popen"].append(argv) or self._FakeSrv())
         import builtins
-        orig_print = builtins.print
+        op = builtins.print
         builtins.print = lambda *a, **kw: None
-        try:
-            cli.play_room("https://live.bilibili.com/1", self._make_args(mode))
-        finally:
-            builtins.print = orig_print
+
+        def restore():
+            builtins.print = op
             (sites.parse, cli._choose_port, cli._wait_ready,
              cli._open_potplayer, cli.subprocess.Popen) = saved
-        grace = popen_argv[0][-1]  # server 位置参数末位 = 宽限秒数
-        return bool(opened), grace
+        return rec, restore
 
-    def test_serve_opens_player_and_keeps_grace(self):
-        opened, grace = self._run("serve")
-        self.assertTrue(opened)          # serve 开播放器
-        self.assertEqual(grace, "180")   # 用户 grace 原样透传
+    def test_serve_only_bare_proxy(self):
+        # 不解析房间、不开播放器、room 省则传空串、grace 强制 0
+        rec, restore = self._patch()
+        try:
+            cli.play_room(None, self._args("serve-only"))
+        finally:
+            restore()
+        self.assertEqual(rec["parsed"], [])       # 未解析
+        self.assertFalse(rec["opened"])           # 未开播放器
+        self.assertEqual(rec["popen"][0][3], "")  # room 空串(url=None)
+        self.assertEqual(rec["popen"][0][-1], "0")  # 强制常驻
 
-    def test_serve_only_skips_player_and_forces_permanent(self):
-        opened, grace = self._run("serve-only")
-        self.assertFalse(opened)         # serve-only 不开播放器
-        self.assertEqual(grace, "0")     # 强制常驻
+    def test_serve_only_reuse_reports_and_exits(self):
+        # 已有代理在跑 → 报告并退出,不起第二个 server
+        rec, restore = self._patch()
+        cli._choose_port = lambda base: (base, True)  # 复用
+        try:
+            ret = cli.play_room(None, self._args("serve-only"))
+        finally:
+            restore()
+        self.assertEqual(ret, 0)
+        self.assertEqual(rec["popen"], [])  # 没起新 server
+
+    def test_serve_opens_player_and_passes_grace(self):
+        # 对照:serve 解析房间、开播放器、透传 grace
+        rec, restore = self._patch(parse_ret={
+            "rid": "1", "nick": "n", "title": "t", "living": True,
+            "streams": {"原画": {"quality": 10000, "url": "u", "backups": []}}})
+        try:
+            cli.play_room("https://live.bilibili.com/1", self._args("serve"))
+        finally:
+            restore()
+        self.assertTrue(rec["opened"])
+        self.assertEqual(rec["popen"][0][-1], "180")
+
+    def test_url_optional_only_for_serve_only(self):
+        # argparse:serve-only 可省地址,其它模式缺地址报错(ap.error → SystemExit)
+        import sys as _sys
+        saved_argv, saved_play = _sys.argv, cli.play_room
+        cli.play_room = lambda url, a: 0
+        try:
+            _sys.argv = ["prog", "--mode", "serve-only"]
+            self.assertEqual(cli.main(), 0)
+            _sys.argv = ["prog", "--mode", "print"]
+            with self.assertRaises(SystemExit):
+                cli.main()
+        finally:
+            _sys.argv, cli.play_room = saved_argv, saved_play
 
 
 class TestDouyuAuth(unittest.TestCase):

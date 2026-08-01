@@ -9,7 +9,7 @@
     --title T       自定义 PotPlayer 窗口标题，默认用房间名(主播名)
     --mode MODE     打开方式，默认 serve:
                       serve      本地转流代理(推荐)：固定地址，自动跨 2 分钟断流自愈
-                      serve-only 只起代理、不拉起 PotPlayer：用别的播放器手动连,默认常驻
+                      serve-only 只起常驻代理、不拉起 PotPlayer(房间地址可省)：别处用 serve 复用它播放,日志集中于此
                       m3u        多线路播放列表：卡住时在 PotPlayer 播放列表切备用线路
                       direct     单条 flv 直链：最简单，卡住无法恢复
                       print      只解析打印各清晰度地址，不打开播放器
@@ -151,7 +151,9 @@ def main():
     ap = argparse.ArgumentParser(prog="potplayer-live")
     ap.add_argument(
         "url",
-        help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456)",
+        nargs="?",
+        default=None,
+        help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456);--mode serve-only 可省",
     )
     ap.add_argument("--quality", default=None)
     ap.add_argument("--line", type=int, default=0)
@@ -168,10 +170,47 @@ def main():
         help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180",
     )
     a = ap.parse_args()
+    if a.url is None and a.mode != "serve-only":
+        ap.error("需要房间地址(仅 --mode serve-only 可省，起纯代理)")
     return play_room(a.url, a)
 
 
+def _serve_only(url, a):
+    """只起常驻代理,不解析房间、不拉起 PotPlayer。
+
+    room 可省:省则用 server 内置默认,launcher 各自带 ?room= 即可。所有断流/转流
+    日志都打印在本进程——一处 server 常驻,别处用 --mode serve 复用它来播放(那些
+    命令行只打印复用提示,日志集中在这里),方便同时从多个命令行启动多个播放。"""
+    port, reuse = _choose_port(a.port)
+    if reuse:
+        print(f"已有代理在端口 {port} 运行,无需重复起(用 --port 指定别的端口可再起一个)。")
+        return 0
+    srv = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "potplayer_live.server",
+            url or "",   # 空串 = server 用内置默认房间(见 server.__main__);launcher 都带 ?room=
+            str(port),
+            a.quality or "",
+            "0",         # 纯代理强制常驻:没有播放器生命周期可挂靠,空闲自动退出没意义
+        ]
+    )
+    if not _wait_ready(port):
+        print("警告:本地代理未在预期时间内就绪。")
+    print(f"本地代理已启动 (PID {srv.pid}，端口 {port})，常驻。")
+    print(f"地址:http://127.0.0.1:{port}/live.flv  (换房间用 ?room=<地址> 或 /<房间号>.flv)")
+    print("别处 --mode serve 播放会复用本代理;断流/转流日志都集中在这里。Ctrl+C 结束。")
+    try:
+        srv.wait()
+    except KeyboardInterrupt:
+        srv.terminate()
+    return 0
+
+
 def play_room(url, a):
+    if a.mode == "serve-only":
+        return _serve_only(url, a)  # 纯代理:不解析、不开播放器,room 可省
     info = sites.parse(url)
     print(f"房间号 : {info['rid']}")
     print(f"主播   : {info['nick']}")
@@ -214,13 +253,10 @@ def play_room(url, a):
         )
         return 0
 
-    # serve / serve-only 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进
-    # 本地地址 query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
-    launch = a.mode == "serve"  # serve-only:只起代理、不拉起 PotPlayer(用别的播放器手动连)
+    # serve 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进本地地址的
+    # query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
     port, reuse = _choose_port(a.port)
     local = _serve_url(port, url, a.quality)
-    # serve-only 没有播放器生命周期可挂靠,空闲自动退出没意义(你随时可能连)→ 强制常驻
-    grace = a.grace if launch else 0
 
     srv = None
     if reuse:
@@ -234,22 +270,21 @@ def play_room(url, a):
                 url,
                 str(port),
                 a.quality or "",
-                str(grace),
+                str(a.grace),
             ]
         )
         if not _wait_ready(port):
-            print("警告:本地代理未在预期时间内就绪。" + ("仍尝试打开播放器。" if launch else ""))
+            print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")
         print(f"本地代理已启动 (PID {srv.pid}，端口 {port})。")
 
-    # 本地代理已带好平台头;标题用 PotPlayer 的「地址\\标题」语法。断流自愈全在代理里。
-    if launch:
-        _open_potplayer(local, title, is_url=True)  # serve-only 跳过,只给出地址
+    # 本地代理已带好平台头;标题用 PotPlayer 的「地址\\标题」语法。
+    # 断流自愈全在代理里，PotPlayer 无感。
+    _open_potplayer(local, title, is_url=True)
     print(f"地址:{local}")
 
     if reuse:
         return 0  # 不占管现有代理，开完即返回
-    tail = "播放器无感。" if launch else "用播放器连上面地址即可。"
-    print(f"直播断流由服务器自动重解析续播，{tail}Ctrl+C 结束。")
+    print("直播断流由服务器自动重解析续播，播放器无感。Ctrl+C 结束。")
     try:
         srv.wait()
     except KeyboardInterrupt:
