@@ -89,6 +89,9 @@ set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe
 ## 说明
 
 - **窗口标题**:用 PotPlayer 的「地址\标题」语法设置;m3u 文件靠内部 `#EXTINF` 名。
+- **窗口复用**:开启 PotPlayer 的单实例设置(`选项 F5 → 基本 →「只运行一个程序实例」`),
+  换房间(改 `--room_id`)或同房间重跑都会在**同一个窗口**打开、不再堆窗口,窗口空着时也直接复用。
+  这是 PotPlayer 自带机制,比从外部判断它在播哪个房间可靠。
 - **请求头**:PotPlayer 的 `/referer`、`/user_agent` 命令行开关不可靠(值含空格会被拆散),
   而虎牙已签名 flv 无需请求头即可播放,故 direct/m3u 不传头;需要请求头的平台请走 serve 模式。
 - **Windows 断流风暴修复**:代理在下游写数据时捕获 `ConnectionAbortedError`(WinError 10053),
