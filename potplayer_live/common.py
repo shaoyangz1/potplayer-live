@@ -3,6 +3,7 @@
 
 各平台解析模块(如 huya.py)与派发层(sites.py)共用这里的东西。
 """
+
 import gzip
 import hashlib
 import urllib.request
@@ -46,7 +47,9 @@ def pick(info: dict, quality: str = None):
         for name, s in streams.items():
             if quality == name or quality == str(s["quality"]):
                 return name, s
-    name = max(streams, key=lambda k: (streams[k]["quality"] == 0, streams[k]["quality"]))
+    name = max(
+        streams, key=lambda k: (streams[k]["quality"] == 0, streams[k]["quality"])
+    )
     return name, streams[name]
 
 

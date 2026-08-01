@@ -16,6 +16,7 @@
 
 PotPlayer 路径:环境变量 POTPLAYER 优先，否则自动探测默认安装位置 / Scoop。
 """
+
 import argparse
 import os
 import shutil
@@ -29,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import sites, common
 
-PORT_SCAN = 20   # 从 --port 起最多向后扫描多少个端口
+PORT_SCAN = 20  # 从 --port 起最多向后扫描多少个端口
 
 
 def _probe(port):
@@ -67,10 +68,10 @@ def _choose_port(base):
     ports = list(range(base, base + PORT_SCAN))
     with ThreadPoolExecutor(max_workers=PORT_SCAN) as ex:
         res = dict(zip(ports, ex.map(_probe, ports)))
-    for p in ports:                       # 先找可复用的
+    for p in ports:  # 先找可复用的
         if res[p] == "ours":
             return p, True
-    for p in ports:                       # 再找空闲的新起
+    for p in ports:  # 再找空闲的新起
         if res[p] == "free":
             return p, False
     raise RuntimeError(f"{base}~{base + PORT_SCAN - 1} 端口都被占用，换个 --port")
@@ -115,7 +116,8 @@ def _potplayer_exe():
             return found
     raise RuntimeError(
         "找不到 PotPlayer。请安装后重试，或用环境变量 POTPLAYER 指向 exe，"
-        r"例如 set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe")
+        r"例如 set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe"
+    )
 
 
 def _serve_url(port, room, quality):
@@ -146,16 +148,26 @@ def _open_potplayer(target, title, is_url):
 
 def main():
     ap = argparse.ArgumentParser(prog="potplayer-live")
-    ap.add_argument("url", help="直播间地址(如 https://www.huya.com/lpl),或分区(如 /g/lol、英雄联盟、lol)")
+    ap.add_argument(
+        "url",
+        help="直播间地址(如 https://www.huya.com/lpl),或分区(如 /g/lol、英雄联盟、lol)",
+    )
     ap.add_argument("--quality", default=None)
     ap.add_argument("--line", type=int, default=0)
     ap.add_argument("--title", default=None)
-    ap.add_argument("--mode", default="serve", choices=["serve", "m3u", "direct", "print"])
+    ap.add_argument(
+        "--mode", default="serve", choices=["serve", "m3u", "direct", "print"]
+    )
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--grace", type=int, default=180,
-                    help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180")
-    ap.add_argument("--pages", type=int, default=3,
-                    help="分区浏览抓取页数(每页约 9 个房间)，默认 3")
+    ap.add_argument(
+        "--grace",
+        type=int,
+        default=180,
+        help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180",
+    )
+    ap.add_argument(
+        "--pages", type=int, default=3, help="分区浏览抓取页数(每页约 9 个房间)，默认 3"
+    )
     a = ap.parse_args()
     if sites.is_category(a.url):
         return browse_category(a)
@@ -185,9 +197,11 @@ def browse_category(a):
     data = sites.list_rooms(a.url, pages=a.pages)
     rooms = data["rooms"]
     if not rooms:
-        print(f"没解析到「{data['name']}」的房间。可能:分区无人直播,或分区名/别名打错"
-              f"(可改用分区页地址 https://www.huya.com/g/<别名> 或 gid)。"
-              f"看单个房间请直接给完整地址 https://www.huya.com/<房间>。")
+        print(
+            f"没解析到「{data['name']}」的房间。可能:分区无人直播,或分区名/别名打错"
+            f"(可改用分区页地址 https://www.huya.com/g/<别名> 或 gid)。"
+            f"看单个房间请直接给完整地址 https://www.huya.com/<房间>。"
+        )
         return 1
     interactive = sys.stdin.isatty()
     print(f"{data['name']} · 正在直播(前 {len(rooms)} 个,按人气):")
@@ -199,7 +213,9 @@ def browse_category(a):
     idx = _choose_index(len(rooms), interactive)
     if idx is None:
         if not interactive:
-            print("非交互模式:复制上面的地址直接跑,如 python -m potplayer_live https://www.huya.com/<房间>")
+            print(
+                "非交互模式:复制上面的地址直接跑,如 python -m potplayer_live https://www.huya.com/<房间>"
+            )
         return 0
     return play_room(f"https://www.huya.com/{rooms[idx]['room']}", a)
 
@@ -215,7 +231,7 @@ def play_room(url, a):
         return 1
 
     name, stream = common.pick(info, a.quality)
-    title = a.title or info["nick"] or info["title"]   # 默认用房间名(主播名)
+    title = a.title or info["nick"] or info["title"]  # 默认用房间名(主播名)
     urls = [stream["url"]] + stream["backups"]
     flv = urls[a.line % len(urls)]
     print(f"清晰度 : {name} (quality={stream['quality']}, 线路数={len(urls)})")
@@ -239,7 +255,9 @@ def play_room(url, a):
         with open(path, "w", encoding="utf-8") as f:
             f.write(common.m3u_content(title, stream))
         _open_potplayer(path, title, is_url=False)  # 标题靠 m3u 内 #EXTINF
-        print(f"已用 m3u 播放列表打开:{path}\n卡住时在 PotPlayer 播放列表切换「备用N」。")
+        print(
+            f"已用 m3u 播放列表打开:{path}\n卡住时在 PotPlayer 播放列表切换「备用N」。"
+        )
         return 0
 
     # serve 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进本地地址的
@@ -251,8 +269,17 @@ def play_room(url, a):
     if reuse:
         print(f"复用已有代理 (端口 {port})，无需新起。")
     else:
-        srv = subprocess.Popen([sys.executable, "-m", "potplayer_live.server",
-                                url, str(port), a.quality or "", str(a.grace)])
+        srv = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "potplayer_live.server",
+                url,
+                str(port),
+                a.quality or "",
+                str(a.grace),
+            ]
+        )
         if not _wait_ready(port):
             print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")
         print(f"本地代理已启动 (PID {srv.pid}，端口 {port})。")
@@ -263,7 +290,7 @@ def play_room(url, a):
     print(f"地址:{local}")
 
     if reuse:
-        return 0   # 不占管现有代理，开完即返回
+        return 0  # 不占管现有代理，开完即返回
     print("直播断流由服务器自动重解析续播，播放器无感。Ctrl+C 结束。")
     try:
         srv.wait()

@@ -8,6 +8,7 @@
     PLAY_HEADERS  dict        拉流时用的 HTTP 头(Referer / User-Agent)
     parse(url)    -> dict     {rid, nick, title, living, streams{名:{quality,url,backups}}}
 """
+
 import urllib.parse
 
 from . import huya

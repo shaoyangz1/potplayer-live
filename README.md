@@ -84,6 +84,22 @@ set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe
 - **端口探测并发**:某些启用了 TUN/过滤驱动的代理软件会让"连接被拒绝"延迟 ~2s,
   serve 模式并发探测端口,避免首次启动被拖慢。
 
+## 项目结构
+
+```
+potplayer_live/          # 主包
+  __main__.py            # 入口(uv run -m potplayer_live)
+  cli.py                 # 命令行:参数解析、端口选择、启动 PotPlayer、分区浏览
+  server.py              # 本地转流代理:跨断流自愈、FLV 时间戳改写
+  common.py              # 公共工具:HTTP、清晰度选择、m3u 生成
+  sites/
+    __init__.py          # 平台派发层(按域名路由)
+    huya.py              # 虎牙解析:签名 / 分区目录 / 房间列表
+tests/                   # 标准库 unittest,零依赖、不触网
+```
+
+新增平台见 [CLAUDE.md](CLAUDE.md)。
+
 ## 测试
 
 纯标准库、不触网,直接跑:

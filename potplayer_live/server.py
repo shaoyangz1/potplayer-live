@@ -9,6 +9,7 @@
 
 用法: python -m potplayer_live.server <房间地址> [端口=8787] [清晰度] [宽限秒数=180]
 """
+
 import sys
 import time
 import threading
@@ -20,10 +21,10 @@ from . import sites
 from .common import pick
 
 # 全局配置:导入时用安全默认(模块可无副作用导入、便于测试),main 块再从命令行覆盖。
-ROOM = "https://www.huya.com/lpl"   # 默认房间(未带 ?room= 的请求回退到它)
+ROOM = "https://www.huya.com/lpl"  # 默认房间(未带 ?room= 的请求回退到它)
 PORT = 8787
-QUALITY = None                       # 默认清晰度(None/"" = 最高);可被请求 ?quality= 覆盖
-GRACE = 180                          # 空闲自动退出秒数;<=0 表示常驻
+QUALITY = None  # 默认清晰度(None/"" = 最高);可被请求 ?quality= 覆盖
+GRACE = 180  # 空闲自动退出秒数;<=0 表示常驻
 # 默认房间的来源(scheme://host/),供路径网关按同平台拼房间地址
 _ORIGIN = "https://www.huya.com/"
 
@@ -59,10 +60,11 @@ def parse_request(path: str):
     如此一个常驻代理即可服务任意房间/清晰度,复用现有代理时也不受其启动参数限制。
     """
     qs = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
-    room_q = qs.get("room", [None])[0]           # parse_qs 已解码
+    room_q = qs.get("room", [None])[0]  # parse_qs 已解码
     room = room_q if room_q else room_from_path(path)
     quality = qs.get("quality", [None])[0]
     return room, (quality if quality else QUALITY)
+
 
 # 活动连接计数与最后活动时间,供自动关闭看门狗判断
 _lock = threading.Lock()
@@ -95,28 +97,38 @@ def open_stream(url, headers):
 
 
 # 上游断连后的重连退避与放弃阈值
-INITIAL_BACKOFF = 0.5   # 首次重试前的退避(秒),之后指数增长
-BACKOFF_MAX = 3.0       # 退避上限(秒)
+INITIAL_BACKOFF = 0.5  # 首次重试前的退避(秒),之后指数增长
+BACKOFF_MAX = 3.0  # 退避上限(秒)
 RETRY_DEADLINE = 120.0  # 上游持续不可用超过此秒数才放弃退出(<=0 视为一直重试)
 
 
-def relay_flv(write, flush, urls, headers, room, quality,
-              resolve_fn=resolve_lines, open_fn=open_stream,
-              retry_deadline=RETRY_DEADLINE, sleep_fn=time.sleep, clock=time.monotonic):
+def relay_flv(
+    write,
+    flush,
+    urls,
+    headers,
+    room,
+    quality,
+    resolve_fn=resolve_lines,
+    open_fn=open_stream,
+    retry_deadline=RETRY_DEADLINE,
+    sleep_fn=time.sleep,
+    clock=time.monotonic,
+):
     """把上游 flv 段持续转发给下游(write/flush 回调),跨平台断流自动重连续播。
 
     上游暂时不可用时退避重试(而非几次失败就放弃);仅当持续失败超过 retry_deadline 秒
     才干净退出,让端口被 watchdog 回收。客户端关播放器(write 抛 ConnectionError)则立即结束。
     write/flush/open_fn/resolve_fn/sleep_fn/clock 可注入,便于不触网测试。"""
-    GAP = 40            # 段间隔(ms),仅换线/时钟跳变时用于接续
-    WINDOW = 60000      # ms,原始 ts 相差在此以内视为“同一时钟”
-    out_base = None     # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
-    last_src = None     # 已输出的最大原始时间戳(跨段,用于丢重复回放)
-    last_out = -GAP     # 已输出的最大输出时间戳
+    GAP = 40  # 段间隔(ms),仅换线/时钟跳变时用于接续
+    WINDOW = 60000  # ms,原始 ts 相差在此以内视为“同一时钟”
+    out_base = None  # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
+    last_src = None  # 已输出的最大原始时间戳(跨段,用于丢重复回放)
+    last_out = -GAP  # 已输出的最大输出时间戳
     first_segment = True
     seg = 0
     line = 0
-    fail_since = None   # 上游连续不可用的起始时刻;成功输出数据即清空
+    fail_since = None  # 上游连续不可用的起始时刻;成功输出数据即清空
     backoff = INITIAL_BACKOFF
 
     def wait_or_giveup(reason):
@@ -125,8 +137,10 @@ def relay_flv(write, flush, urls, headers, room, quality,
         if fail_since is None:
             fail_since = clock()
         elif retry_deadline > 0 and clock() - fail_since > retry_deadline:
-            print(f"[seg {seg}] 上游持续不可用超过 {retry_deadline:.0f}s（{reason}），退出转流。",
-                  flush=True)
+            print(
+                f"[seg {seg}] 上游持续不可用超过 {retry_deadline:.0f}s（{reason}），退出转流。",
+                flush=True,
+            )
             return True
         line += 1
         sleep_fn(min(backoff, BACKOFF_MAX))
@@ -148,12 +162,17 @@ def relay_flv(write, flush, urls, headers, room, quality,
                 return
             continue
         seg += 1
-        print(f"[seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True)
+        print(
+            f"[seg {seg}] 线路{line % len(urls)} 连接，last_out={last_out}", flush=True
+        )
 
         # FLV 文件头(9)+PreviousTagSize0(4)：仅第一段转发，后续段丢弃
         header = read_exact(fp, 13)
         if len(header) < 13:
-            print(f"[seg {seg}] 连接后未读到完整 FLV 头(len={len(header)})，重连", flush=True)
+            print(
+                f"[seg {seg}] 连接后未读到完整 FLV 头(len={len(header)})，重连",
+                flush=True,
+            )
             try:
                 fp.close()
             except Exception:
@@ -169,10 +188,10 @@ def relay_flv(write, flush, urls, headers, room, quality,
                 return
             first_segment = False
 
-        resume = last_src   # 本段丢弃阈值:原始 ts <= resume 的都是重复回放
+        resume = last_src  # 本段丢弃阈值:原始 ts <= resume 的都是重复回放
         first_tag = True
-        dropped = 0         # 本段丢弃的重复帧数(用于日志)
-        drop_from = None    # 首个被丢帧的原始 ts,用于算丢弃时长
+        dropped = 0  # 本段丢弃的重复帧数(用于日志)
+        drop_from = None  # 首个被丢帧的原始 ts,用于算丢弃时长
         try:
             while True:
                 th = read_exact(fp, 11)
@@ -188,8 +207,8 @@ def relay_flv(write, flush, urls, headers, room, quality,
                 if first_tag:
                     first_tag = False
                     if out_base is None:
-                        out_base = -ts          # 首段:输出从 0 开始
-                        resume = None            # 首段不丢弃
+                        out_base = -ts  # 首段:输出从 0 开始
+                        resume = None  # 首段不丢弃
                     elif last_src is not None and abs(ts - last_src) > WINDOW:
                         # 时钟跳变(多半换了 CDN 线路)→ 重新基线,本段整体接到末尾之后
                         out_base = (last_out + GAP) - ts
@@ -202,23 +221,36 @@ def relay_flv(write, flush, urls, headers, room, quality,
                     dropped += 1
                     continue
                 if dropped:
-                    print(f"[seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
-                          f"从 out_ts={ts + out_base} 续播", flush=True)
+                    print(
+                        f"[seg {seg}] 丢弃重复回放 {dropped} 帧(~{resume - drop_from}ms)，"
+                        f"从 out_ts={ts + out_base} 续播",
+                        flush=True,
+                    )
                     dropped = 0
 
                 new_ts = ts + out_base
-                nh = bytes([th[0],
-                            (dsize >> 16) & 0xFF, (dsize >> 8) & 0xFF, dsize & 0xFF,
-                            (new_ts >> 16) & 0xFF, (new_ts >> 8) & 0xFF, new_ts & 0xFF,
-                            (new_ts >> 24) & 0xFF,
-                            th[8], th[9], th[10]])
+                nh = bytes(
+                    [
+                        th[0],
+                        (dsize >> 16) & 0xFF,
+                        (dsize >> 8) & 0xFF,
+                        dsize & 0xFF,
+                        (new_ts >> 16) & 0xFF,
+                        (new_ts >> 8) & 0xFF,
+                        new_ts & 0xFF,
+                        (new_ts >> 24) & 0xFF,
+                        th[8],
+                        th[9],
+                        th[10],
+                    ]
+                )
                 try:
                     write(nh)
                     write(data)
                     write(prev)
                 except ConnectionError:
                     return  # 播放器关了 → 结束(Windows 为 ConnectionAbortedError)
-                fail_since = None            # 成功输出数据 → 上游确已恢复,清空失败计时
+                fail_since = None  # 成功输出数据 → 上游确已恢复,清空失败计时
                 backoff = INITIAL_BACKOFF
                 if new_ts > last_out:
                     last_out = new_ts
@@ -312,7 +344,9 @@ if __name__ == "__main__":
     _ORIGIN = _origin_of(ROOM)
     print(f"默认房间: {ROOM}")
     print(f"默认地址: http://127.0.0.1:{PORT}/live.flv")
-    print(f"任意房间: http://127.0.0.1:{PORT}/<房间号或别名>.flv  (如 /lpl.flv、/660000.flv)")
+    print(
+        f"任意房间: http://127.0.0.1:{PORT}/<房间号或别名>.flv  (如 /lpl.flv、/660000.flv)"
+    )
     if GRACE > 0:
         print(f"自动关闭: 无连接空闲 {GRACE}s 后退出")
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)

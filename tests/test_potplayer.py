@@ -7,6 +7,7 @@
 serve 代理的按请求 room/quality 解析、cli 的就绪轮询。
 纯函数用独立参考实现比对,而非仅锁定魔数值。
 """
+
 import base64
 import hashlib
 import unittest
@@ -55,15 +56,18 @@ class TestPick(unittest.TestCase):
 class TestM3U(unittest.TestCase):
     def test_layout_with_backups(self):
         content = common.m3u_content("房间", _stream(0, "u0", ["u1", "u2"]))
-        self.assertEqual(content.splitlines(), [
-            "#EXTM3U",
-            "#EXTINF:-1 ,房间",
-            "u0",
-            "#EXTINF:-1 ,房间 - 备用1",
-            "u1",
-            "#EXTINF:-1 ,房间 - 备用2",
-            "u2",
-        ])
+        self.assertEqual(
+            content.splitlines(),
+            [
+                "#EXTM3U",
+                "#EXTINF:-1 ,房间",
+                "u0",
+                "#EXTINF:-1 ,房间 - 备用1",
+                "u1",
+                "#EXTINF:-1 ,房间 - 备用2",
+                "u2",
+            ],
+        )
 
     def test_single_line_no_backups(self):
         content = common.m3u_content("A", _stream(0, "only", []))
@@ -105,8 +109,11 @@ class TestWsSecret(unittest.TestCase):
     def test_default_t_when_missing(self):
         # anti 无 t 时默认 "100"
         fm_plain = "p_$0_$1_$2_$3"
-        anti = {"fm": urllib.parse.quote(base64.b64encode(fm_plain.encode()).decode()),
-                "wsTime": "abc", "ctype": "c"}
+        anti = {
+            "fm": urllib.parse.quote(base64.b64encode(fm_plain.encode()).decode()),
+            "wsTime": "abc",
+            "ctype": "c",
+        }
         got = huya._ws_secret(anti, 1, 2, "n")
         s = hashlib.md5("2|c|100".encode()).hexdigest()
         expected = hashlib.md5(f"p_1_n_{s}_abc".encode()).hexdigest()
@@ -122,15 +129,19 @@ class TestParseRequest(unittest.TestCase):
         server.QUALITY = None
 
     def test_slug_path_uses_default_platform(self):
-        self.assertEqual(server.parse_request("/lpl.flv"),
-                         ("https://www.huya.com/lpl", None))
+        self.assertEqual(
+            server.parse_request("/lpl.flv"), ("https://www.huya.com/lpl", None)
+        )
 
     def test_numeric_slug(self):
-        self.assertEqual(server.parse_request("/660000.flv"),
-                         ("https://www.huya.com/660000", None))
+        self.assertEqual(
+            server.parse_request("/660000.flv"), ("https://www.huya.com/660000", None)
+        )
 
     def test_live_or_root_uses_default_room(self):
-        self.assertEqual(server.parse_request("/live.flv")[0], "https://www.huya.com/lpl")
+        self.assertEqual(
+            server.parse_request("/live.flv")[0], "https://www.huya.com/lpl"
+        )
         self.assertEqual(server.parse_request("/")[0], "https://www.huya.com/lpl")
 
     def test_room_query_overrides_path_supports_cross_platform(self):
@@ -140,7 +151,9 @@ class TestParseRequest(unittest.TestCase):
         self.assertEqual(server.parse_request(path)[0], room)
 
     def test_quality_query_parsed(self):
-        room, quality = server.parse_request("/lpl.flv?quality=" + urllib.parse.quote("原画"))
+        room, quality = server.parse_request(
+            "/lpl.flv?quality=" + urllib.parse.quote("原画")
+        )
         self.assertEqual(quality, "原画")
         self.assertEqual(room, "https://www.huya.com/lpl")
 
@@ -205,7 +218,7 @@ class TestWaitReady(unittest.TestCase):
 
     def test_returns_false_on_timeout(self):
         orig = cli._probe
-        cli._probe = lambda port: "free"       # 永不就绪
+        cli._probe = lambda port: "free"  # 永不就绪
         try:
             self.assertFalse(cli._wait_ready(1234, timeout=0))
         finally:
@@ -223,11 +236,21 @@ def _flv_header():
 def _flv_tag(ts=0, dsize=1, ttype=8, data=b"\x00"):
     """构造一个最小 FLV tag:11 字节 tag 头 + data(dsize) + 4 字节 PreviousTagSize。"""
     payload = data[:dsize].ljust(dsize, b"\x00")
-    th = bytes([ttype,
-                (dsize >> 16) & 0xFF, (dsize >> 8) & 0xFF, dsize & 0xFF,
-                (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF,
-                (ts >> 24) & 0xFF,
-                0, 0, 0])
+    th = bytes(
+        [
+            ttype,
+            (dsize >> 16) & 0xFF,
+            (dsize >> 8) & 0xFF,
+            dsize & 0xFF,
+            (ts >> 16) & 0xFF,
+            (ts >> 8) & 0xFF,
+            ts & 0xFF,
+            (ts >> 24) & 0xFF,
+            0,
+            0,
+            0,
+        ]
+    )
     return th + payload + b"\x00\x00\x00\x00"
 
 
@@ -260,16 +283,28 @@ class TestRelayReconnect(unittest.TestCase):
 
         def write(b):
             out.extend(b)
-            if len(out) > 13:                 # 首段头(13B)之后收到数据 → 模拟客户端关闭,终止
+            if len(out) > 13:  # 首段头(13B)之后收到数据 → 模拟客户端关闭,终止
                 raise ConnectionError("client closed")
 
         good = _segment(_flv_tag(ts=100))
         up = _FakeUpstream(["fail", "fail", "fail", good])
-        server.relay_flv(write, lambda: None, ["u0"], {}, "room", None,
-                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
-                         sleep_fn=lambda *_: None)
-        self.assertIn(b"FLV", bytes(out), "恢复后应把 FLV 头转发给下游,而不是在失败上限处放弃")
-        self.assertGreaterEqual(up.calls, 4, "应重试到第 4 次成功,而不是在失败上限处放弃")
+        server.relay_flv(
+            write,
+            lambda: None,
+            ["u0"],
+            {},
+            "room",
+            None,
+            resolve_fn=lambda r, q: (["u0"], "t", {}),
+            open_fn=up,
+            sleep_fn=lambda *_: None,
+        )
+        self.assertIn(
+            b"FLV", bytes(out), "恢复后应把 FLV 头转发给下游,而不是在失败上限处放弃"
+        )
+        self.assertGreaterEqual(
+            up.calls, 4, "应重试到第 4 次成功,而不是在失败上限处放弃"
+        )
 
     def test_gives_up_after_deadline_when_upstream_never_recovers(self):
         # 上游永远连不上:应在超过 retry_deadline 后干净退出,而不是无限重试。
@@ -280,12 +315,22 @@ class TestRelayReconnect(unittest.TestCase):
             return clock["t"]
 
         def fake_sleep(_):
-            clock["t"] += 5.0                 # 每次退避推进 5s 虚拟时间
+            clock["t"] += 5.0  # 每次退避推进 5s 虚拟时间
 
-        up = _FakeUpstream(["fail"])          # 永远失败
-        server.relay_flv(out.extend, lambda: None, ["u0"], {}, "room", None,
-                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
-                         retry_deadline=30.0, sleep_fn=fake_sleep, clock=fake_clock)
+        up = _FakeUpstream(["fail"])  # 永远失败
+        server.relay_flv(
+            out.extend,
+            lambda: None,
+            ["u0"],
+            {},
+            "room",
+            None,
+            resolve_fn=lambda r, q: (["u0"], "t", {}),
+            open_fn=up,
+            retry_deadline=30.0,
+            sleep_fn=fake_sleep,
+            clock=fake_clock,
+        )
         self.assertLess(up.calls, 20, "超过时限应退出,不能无限重试")
         self.assertEqual(bytes(out), b"", "从未连上,不应有任何输出")
 
@@ -296,9 +341,17 @@ class TestRelayReconnect(unittest.TestCase):
 
         good = _segment(_flv_tag(ts=100))
         up = _FakeUpstream([good, good, good])
-        server.relay_flv(write, lambda: None, ["u0"], {}, "room", None,
-                         resolve_fn=lambda r, q: (["u0"], "t", {}), open_fn=up,
-                         sleep_fn=lambda *_: None)
+        server.relay_flv(
+            write,
+            lambda: None,
+            ["u0"],
+            {},
+            "room",
+            None,
+            resolve_fn=lambda r, q: (["u0"], "t", {}),
+            open_fn=up,
+            sleep_fn=lambda *_: None,
+        )
         self.assertEqual(up.calls, 1, "客户端断开后应立即停止,不应再连上游")
 
 
@@ -308,6 +361,7 @@ class TestHttpHelpers(unittest.TestCase):
 
     def test_gunzip_decompresses_gzip(self):
         import gzip as _gz
+
         self.assertEqual(common._gunzip(_gz.compress(b"hello")), b"hello")
 
     def test_decode_text_utf8(self):
@@ -321,16 +375,29 @@ class TestHttpHelpers(unittest.TestCase):
 class TestCategories(unittest.TestCase):
     def test_parse_categories_extracts_fields(self):
         import json as _j
-        raw = _j.dumps({"data": [
-            {"gid": 1, "gameHostName": "lol", "gameFullName": "英雄联盟", "totalCount": 123},
-            {"gid": 2, "gameHostName": "", "gameFullName": "", "totalCount": 0},
-        ]}).encode("utf-8")
+
+        raw = _j.dumps(
+            {
+                "data": [
+                    {
+                        "gid": 1,
+                        "gameHostName": "lol",
+                        "gameFullName": "英雄联盟",
+                        "totalCount": 123,
+                    },
+                    {"gid": 2, "gameHostName": "", "gameFullName": "", "totalCount": 0},
+                ]
+            }
+        ).encode("utf-8")
         cats = huya._parse_categories(raw)
-        self.assertEqual(cats[0], {"gid": 1, "host": "lol", "name": "英雄联盟", "online": 123})
+        self.assertEqual(
+            cats[0], {"gid": 1, "host": "lol", "name": "英雄联盟", "online": 123}
+        )
         self.assertEqual(cats[1]["gid"], 2)
 
     def test_parse_categories_skips_missing_gid(self):
         import json as _j
+
         raw = _j.dumps({"data": [{"gameHostName": "x"}]}).encode("utf-8")
         self.assertEqual(huya._parse_categories(raw), [])
 
@@ -339,23 +406,31 @@ class TestResolveCategory(unittest.TestCase):
     CATS = [{"gid": 1, "host": "lol", "name": "英雄联盟", "online": 9}]
 
     def test_gid_passthrough_with_display(self):
-        self.assertEqual(huya.resolve_category("1", categories=self.CATS), ("1", "英雄联盟"))
+        self.assertEqual(
+            huya.resolve_category("1", categories=self.CATS), ("1", "英雄联盟")
+        )
 
     def test_alias_passthrough_with_display(self):
-        self.assertEqual(huya.resolve_category("lol", categories=self.CATS), ("lol", "英雄联盟"))
+        self.assertEqual(
+            huya.resolve_category("lol", categories=self.CATS), ("lol", "英雄联盟")
+        )
 
     def test_chinese_name_maps_to_alias(self):
-        self.assertEqual(huya.resolve_category("英雄联盟", categories=self.CATS), ("lol", "英雄联盟"))
+        self.assertEqual(
+            huya.resolve_category("英雄联盟", categories=self.CATS), ("lol", "英雄联盟")
+        )
 
     def test_unknown_passthrough_uses_ident_as_display(self):
         self.assertEqual(huya.resolve_category("wzry", categories=[]), ("wzry", "wzry"))
 
 
 def _card(room, nick, viewers, title):
-    return (f'<a href="/{room}" class="qqqq g-link"><div class="g-item">'
-            f'<span class="nick">{nick}</span>'
-            f'<span class="viewer-count">{viewers}</span>'
-            f'<p class="title">{title}</p></div></a>')
+    return (
+        f'<a href="/{room}" class="qqqq g-link"><div class="g-item">'
+        f'<span class="nick">{nick}</span>'
+        f'<span class="viewer-count">{viewers}</span>'
+        f'<p class="title">{title}</p></div></a>'
+    )
 
 
 class TestListCategory(unittest.TestCase):
@@ -363,22 +438,34 @@ class TestListCategory(unittest.TestCase):
 
     def test_parse_rooms_fields(self):
         html = "<html>" + _card("333003", "主播A", "911万", "标题A") + "</html>"
-        self.assertEqual(huya._parse_rooms(html),
-                         [{"room": "333003", "nick": "主播A", "viewers": "911万", "title": "标题A"}])
+        self.assertEqual(
+            huya._parse_rooms(html),
+            [{"room": "333003", "nick": "主播A", "viewers": "911万", "title": "标题A"}],
+        )
 
     def test_list_category_dedup_preserves_order(self):
-        pages = {1: _card("a", "na", "9万", "ta") + _card("b", "nb", "8万", "tb"),
-                 2: _card("b", "nb", "8万", "tb") + _card("c", "nc", "7万", "tc")}
-        res = huya.list_category("lol", pages=3, categories=self.CATS,
-                                 fetch=lambda slug, page: pages.get(page, ""))
+        pages = {
+            1: _card("a", "na", "9万", "ta") + _card("b", "nb", "8万", "tb"),
+            2: _card("b", "nb", "8万", "tb") + _card("c", "nc", "7万", "tc"),
+        }
+        res = huya.list_category(
+            "lol",
+            pages=3,
+            categories=self.CATS,
+            fetch=lambda slug, page: pages.get(page, ""),
+        )
         self.assertEqual([r["room"] for r in res["rooms"]], ["a", "b", "c"])
         self.assertEqual(res["name"], "英雄联盟")
         self.assertEqual(res["slug"], "lol")
 
     def test_list_category_stops_on_empty_page(self):
         pages = {1: _card("a", "na", "9万", "ta")}
-        res = huya.list_category("lol", pages=5, categories=self.CATS,
-                                 fetch=lambda slug, page: pages.get(page, ""))
+        res = huya.list_category(
+            "lol",
+            pages=5,
+            categories=self.CATS,
+            fetch=lambda slug, page: pages.get(page, ""),
+        )
         self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
 
 
@@ -422,6 +509,7 @@ class TestChooseIndex(unittest.TestCase):
     def test_eof_cancels(self):
         def boom(_):
             raise EOFError
+
         self.assertIsNone(cli._choose_index(5, True, input_fn=boom))
 
 

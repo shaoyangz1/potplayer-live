@@ -6,6 +6,7 @@
     PLAY_HEADERS   拉流时用的 HTTP 头(Referer/User-Agent)
     parse(url)     -> {rid, nick, title, living, streams{清晰度:{quality,url,backups}}}
 """
+
 import re
 import json
 import time
@@ -17,10 +18,14 @@ from ..common import http_get, http_get_text, decode_text, md5
 
 # 本模块的域名与拉流头
 DOMAINS = ["huya.com"]
-UA_MOBILE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 "
-             "(KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1")
-UA_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-              "(KHTML, like Gecko) Version/17.3.1 Safari/605.1.15")
+UA_MOBILE = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
+)
+UA_DESKTOP = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.3.1 Safari/605.1.15"
+)
 REFERER = "https://www.huya.com/"
 PLAY_HEADERS = {"User-Agent": UA_DESKTOP, "Referer": REFERER}
 
@@ -36,10 +41,14 @@ def _parse_categories(raw: bytes) -> list:
         gid = c.get("gid")
         if gid is None:
             continue
-        out.append({"gid": int(gid),
-                    "host": c.get("gameHostName") or "",
-                    "name": c.get("gameFullName") or "",
-                    "online": c.get("totalCount")})
+        out.append(
+            {
+                "gid": int(gid),
+                "host": c.get("gameHostName") or "",
+                "name": c.get("gameFullName") or "",
+                "online": c.get("totalCount"),
+            }
+        )
     return out
 
 
@@ -48,10 +57,12 @@ def _categories() -> list:
     last = None
     for i in range(3):
         try:
-            return _parse_categories(http_get(CATEGORY_URL, headers={"User-Agent": UA_MOBILE}))
-        except Exception as e:      # noqa: BLE001 目录不可用不应连累透传路径
+            return _parse_categories(
+                http_get(CATEGORY_URL, headers={"User-Agent": UA_MOBILE})
+            )
+        except Exception as e:  # noqa: BLE001 目录不可用不应连累透传路径
             last = e
-            if i < 2:               # 最后一次失败不再空等,直接抛给 _safe_categories 兜底
+            if i < 2:  # 最后一次失败不再空等,直接抛给 _safe_categories 兜底
                 time.sleep(1)
     raise last
 
@@ -77,16 +88,16 @@ def resolve_category(ident, categories=None):
     by_host = {c["host"].lower(): c for c in cats if c.get("host")}
     by_gid = {str(c["gid"]): c for c in cats if c.get("gid") is not None}
     by_name = {c["name"]: c for c in cats if c.get("name")}
-    if ident.isdigit():                       # gid 透传,显示名反查
+    if ident.isdigit():  # gid 透传,显示名反查
         c = by_gid.get(ident)
         return ident, (c["name"] if c and c["name"] else ident)
-    c = by_host.get(ident.lower())            # 别名透传,显示名反查
+    c = by_host.get(ident.lower())  # 别名透传,显示名反查
     if c:
         return ident, (c["name"] or ident)
-    c = by_name.get(ident)                    # 中文名 → 别名/gid 作 slug
+    c = by_name.get(ident)  # 中文名 → 别名/gid 作 slug
     if c:
         return (c["host"] or str(c["gid"])), c["name"]
-    return ident, ident                       # 目录外:当 slug 透传
+    return ident, ident  # 目录外:当 slug 透传
 
 
 # 移动端 SSR 分区页(UTF-8),?page=N 翻页;每页约 9 个房间卡片
@@ -95,15 +106,23 @@ _ROOM_CARD = re.compile(
     r'<a href="/([^"]+)" class="qqqq g-link">.*?'
     r'<span class="nick">(.*?)</span>.*?'
     r'<span class="viewer-count">(.*?)</span>.*?'
-    r'<p class="title">(.*?)</p>', re.S)
+    r'<p class="title">(.*?)</p>',
+    re.S,
+)
 
 
 def _parse_rooms(html: str) -> list:
     """从分区页 HTML 提取房间卡片。"""
     out = []
     for room, nick, viewers, title in _ROOM_CARD.findall(html):
-        out.append({"room": room, "nick": nick.strip(),
-                    "viewers": viewers.strip(), "title": title.strip()})
+        out.append(
+            {
+                "room": room,
+                "nick": nick.strip(),
+                "viewers": viewers.strip(),
+                "title": title.strip(),
+            }
+        )
     return out
 
 
@@ -115,9 +134,13 @@ def list_category(ident, pages=3, categories=None, fetch=None):
     """
     slug, name = resolve_category(ident, categories=categories)
     if fetch is None:
+
         def fetch(slug, page):
-            return http_get_text(ROOM_LIST_URL.format(slug=slug, page=page),
-                                 headers={"User-Agent": UA_MOBILE})
+            return http_get_text(
+                ROOM_LIST_URL.format(slug=slug, page=page),
+                headers={"User-Agent": UA_MOBILE},
+            )
+
     seen, rooms = set(), []
     for page in range(1, pages + 1):
         try:
@@ -126,7 +149,7 @@ def list_category(ident, pages=3, categories=None, fetch=None):
             break
         page_rooms = _parse_rooms(html)
         if not page_rooms:
-            break                     # 该页无卡片 → 到底了
+            break  # 该页无卡片 → 到底了
         for r in page_rooms:
             if r["room"] not in seen:
                 seen.add(r["room"])
@@ -135,8 +158,10 @@ def list_category(ident, pages=3, categories=None, fetch=None):
 
 
 # 签名 query 参数顺序模板(用来保持各参数顺序一致)
-_EXAMPLE = ("wsSecret=x&wsTime=x&seqid=x&ctype=x&ver=1&fs=bgct&ratio=2000&dMod=mseh-8"
-            "&sdkPcdn=1_1&u=x&t=100&sv=2407051433&sdk_sid=x&a_block=0&sf=1")
+_EXAMPLE = (
+    "wsSecret=x&wsTime=x&seqid=x&ctype=x&ver=1&fs=bgct&ratio=2000&dMod=mseh-8"
+    "&sdkPcdn=1_1&u=x&t=100&sv=2407051433&sdk_sid=x&a_block=0&sf=1"
+)
 
 
 def _api_get(url):
@@ -148,7 +173,7 @@ def _rot_uid(uid: int) -> int:
     s = format(uid, "b").zfill(64)
     a, r = s[:32], s[32:]
     i = 8
-    n = r[i:32] + r[:i]                 # 把 r 的前 8 位挪到末尾
+    n = r[i:32] + r[:i]  # 把 r 的前 8 位挪到末尾
     return int(a + n, 2)
 
 
@@ -163,12 +188,18 @@ def _anti_dict(anti: str) -> dict:
 
 # ---- wsSecret:防盗链签名 ----
 def _ws_secret(anti: dict, convert_uid: int, seqid: int, stream_name: str) -> str:
-    fm = base64.b64decode(urllib.parse.unquote(anti["fm"])).decode()  # 形如 xxx_$0_$1_$2_$3
+    fm = base64.b64decode(
+        urllib.parse.unquote(anti["fm"])
+    ).decode()  # 形如 xxx_$0_$1_$2_$3
     wstime, ctype = anti["wsTime"], anti["ctype"]
     t = anti.get("t", "100")
     s = md5(f"{seqid}|{ctype}|{t}")
-    u = (fm.replace("$0", str(convert_uid)).replace("$1", stream_name)
-           .replace("$2", s).replace("$3", wstime))
+    u = (
+        fm.replace("$0", str(convert_uid))
+        .replace("$1", stream_name)
+        .replace("$2", s)
+        .replace("$3", wstime)
+    )
     return md5(u)
 
 
@@ -210,19 +241,37 @@ def parse(url: str) -> dict:
     api = f"https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid={rid}"
     data = json.loads(_api_get(api))["data"]
     ld = data["liveData"]
-    info = {"rid": rid, "nick": ld.get("nick"),
-            "title": ld.get("roomName") or ld.get("introduction") or ld.get("nick"),
-            "living": data.get("liveStatus") == "ON", "streams": {}}
+    info = {
+        "rid": rid,
+        "nick": ld.get("nick"),
+        "title": ld.get("roomName") or ld.get("introduction") or ld.get("nick"),
+        "living": data.get("liveStatus") == "ON",
+        "streams": {},
+    }
     if not info["living"]:
         return info
-    uid = (int(time.time() * 1000) % int(1e10) * int(1e3) + random.randint(100, 999)) % 4294967295
+    uid = (
+        int(time.time() * 1000) % int(1e10) * int(1e3) + random.randint(100, 999)
+    ) % 4294967295
     lines = data["stream"]["baseSteamInfoList"]
-    lines = sorted(lines, key=lambda b: "txdirect.flv.huya.com" in b["sFlvUrl"])  # txdirect 排后
-    base_urls = [_sign_url(uid, b["sStreamName"], b["sFlvUrl"],
-                           b["sFlvUrlSuffix"], b["sFlvAntiCode"]) for b in lines]
+    lines = sorted(
+        lines, key=lambda b: "txdirect.flv.huya.com" in b["sFlvUrl"]
+    )  # txdirect 排后
+    base_urls = [
+        _sign_url(
+            uid, b["sStreamName"], b["sFlvUrl"], b["sFlvUrlSuffix"], b["sFlvAntiCode"]
+        )
+        for b in lines
+    ]
     for br in json.loads(ld["bitRateInfo"]):
         name, rate = br["sDisplayName"], br["iBitRate"]
-        us = [(u.replace("&ratio=0", f"&ratio={rate}") if rate else u.replace("&ratio=0", ""))
-              for u in base_urls]
+        us = [
+            (
+                u.replace("&ratio=0", f"&ratio={rate}")
+                if rate
+                else u.replace("&ratio=0", "")
+            )
+            for u in base_urls
+        ]
         info["streams"][name] = {"quality": rate, "url": us[0], "backups": us[1:]}
     return info
