@@ -15,7 +15,7 @@ import unittest
 import urllib.parse
 
 from potplayer_live import common, server, cli, sites
-from potplayer_live.sites import huya, douyin, douyu
+from potplayer_live.sites import huya, douyin, douyu, bilibili
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
@@ -653,6 +653,93 @@ class TestDouyuDispatch(unittest.TestCase):
     def test_play_headers_has_referer(self):
         h = sites.play_headers("https://www.douyu.com/123456")
         self.assertEqual(h["Referer"], "https://www.douyu.com")
+
+
+class TestBiliResolveRoom(unittest.TestCase):
+    """resolve_room:fetch 注入假 room_init,不触网。"""
+
+    def test_short_to_real_and_living(self):
+        fake = {"data": {"room_id": 654321, "uid": 1, "live_status": 1}}
+        self.assertEqual(bilibili.resolve_room(123, fetch=lambda u: fake), (654321, True))
+
+    def test_not_living(self):
+        fake = {"data": {"room_id": 100, "uid": 1, "live_status": 0}}
+        self.assertEqual(bilibili.resolve_room(100, fetch=lambda u: fake), (100, False))
+
+    def test_loop_not_living(self):
+        # 轮播 live_status==2 不算开播
+        fake = {"data": {"room_id": 100, "uid": 1, "live_status": 2}}
+        self.assertFalse(bilibili.resolve_room(100, fetch=lambda u: fake)[1])
+
+
+class TestBiliRoomMeta(unittest.TestCase):
+    def test_title_and_nick(self):
+        fake = {"data": {"room_info": {"title": "标题"},
+                         "anchor_info": {"base_info": {"uname": "主播"}}}}
+        self.assertEqual(bilibili._room_meta(1, fetch=lambda u: fake), ("主播", "标题"))
+
+    def test_title_falls_back_to_nick(self):
+        fake = {"data": {"room_info": {"title": ""},
+                         "anchor_info": {"base_info": {"uname": "主播"}}}}
+        self.assertEqual(bilibili._room_meta(1, fetch=lambda u: fake), ("主播", "主播"))
+
+
+class TestBiliStreamsFromPlayinfo(unittest.TestCase):
+    """核心拼接逻辑:host+base_url+extra、多线路 backups、flv 优先。"""
+
+    def _data(self):
+        codec = {
+            "codec_name": "avc", "current_qn": 10000, "accept_qn": [10000, 400],
+            "base_url": "/live/123.flv?p=1",
+            "url_info": [
+                {"host": "https://c1.bili.com", "extra": "&k=a"},
+                {"host": "https://c2.bili.com", "extra": "&k=b"},
+            ],
+        }
+        return {"playurl_info": {"playurl": {"stream": [
+            {"protocol_name": "http_stream",
+             "format": [{"format_name": "flv", "codec": [codec]}]},
+        ]}}}
+
+    def test_join_and_backups(self):
+        s = bilibili._streams_from_playinfo(self._data())["原画"]
+        self.assertEqual(s["quality"], 10000)
+        self.assertEqual(s["url"], "https://c1.bili.com/live/123.flv?p=1&k=a")
+        self.assertEqual(s["backups"], ["https://c2.bili.com/live/123.flv?p=1&k=b"])
+
+    def test_flv_preferred_over_hls_same_qn(self):
+        # hls 与 flv 同档,http_stream 排前 → 保留 flv
+        d = self._data()
+        hls_codec = {"current_qn": 10000, "base_url": "/live/123.m3u8",
+                     "url_info": [{"host": "https://h.bili.com", "extra": ""}]}
+        d["playurl_info"]["playurl"]["stream"].insert(
+            0, {"protocol_name": "http_hls",
+                "format": [{"format_name": "fmp4", "codec": [hls_codec]}]})
+        s = bilibili._streams_from_playinfo(d)["原画"]
+        self.assertTrue(s["url"].endswith(".flv?p=1&k=a"))
+
+    def test_missing_extra_ok(self):
+        d = self._data()
+        del d["playurl_info"]["playurl"]["stream"][0]["format"][0]["codec"][0]["url_info"][0]["extra"]
+        s = bilibili._streams_from_playinfo(d)["原画"]
+        self.assertEqual(s["url"], "https://c1.bili.com/live/123.flv?p=1")
+
+    def test_empty_playinfo(self):
+        self.assertEqual(bilibili._streams_from_playinfo({}), {})
+
+    def test_unknown_qn_uses_number_name(self):
+        d = self._data()
+        d["playurl_info"]["playurl"]["stream"][0]["format"][0]["codec"][0]["current_qn"] = 999
+        self.assertIn("999", bilibili._streams_from_playinfo(d))
+
+
+class TestBiliDispatch(unittest.TestCase):
+    def test_get_site_routes_to_bilibili(self):
+        self.assertIs(sites.get_site("https://live.bilibili.com/123456"), bilibili)
+
+    def test_play_headers_has_referer(self):
+        h = sites.play_headers("https://live.bilibili.com/123456")
+        self.assertEqual(h["Referer"], "https://live.bilibili.com/")
 
 
 if __name__ == "__main__":

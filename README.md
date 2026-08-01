@@ -1,6 +1,6 @@
 # potplayer-live
 
-用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com、斗鱼 douyu.com)的真实直播流地址,交给
+用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com、斗鱼 douyu.com、哔哩哔哩 live.bilibili.com)的真实直播流地址,交给
 PotPlayer 播放。
 
 只针对 PotPlayer:平台解析在后台完成,给 PotPlayer 一个稳定地址来播放。
@@ -30,6 +30,9 @@ uv run -m potplayer_live https://live.douyin.com/123456
 
 # 斗鱼
 uv run -m potplayer_live https://www.douyu.com/123456
+
+# 哔哩哔哩
+uv run -m potplayer_live https://live.bilibili.com/123456
 
 # 或直接用 python
 python -m potplayer_live https://www.huya.com/lpl
@@ -74,6 +77,8 @@ set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe
   这是 Windows 上播放器断开连接的信号 —— 关掉 PotPlayer 会让代理干净退出,而不是疯狂重连上游。
 - **端口探测并发**:某些启用了 TUN/过滤驱动的代理软件会让"连接被拒绝"延迟 ~2s,
   serve 模式并发探测端口,避免首次启动被拖慢。
+- **哔哩哔哩原画**:B 站原画/4K 需登录后取流,设环境变量 `BILI_COOKIE`(浏览器里的
+  `SESSDATA`)即可解锁;不设则走免登录,最高约蓝光。
 
 ## 项目结构
 
@@ -88,6 +93,7 @@ potplayer_live/          # 主包
     huya.py              # 虎牙解析:签名 flv 地址
     douyin.py            # 抖音解析:ttwid cookie / enter 接口
     douyu.py             # 斗鱼解析:getEncryption + 纯 MD5 auth + getH5PlayV1
+    bilibili.py          # B 站直播解析:room_init + getRoomPlayInfo(免签名)
 tests/                   # 标准库 unittest,零依赖、不触网
 ```
 
