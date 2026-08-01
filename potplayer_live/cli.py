@@ -8,10 +8,11 @@
     --line K        直链/m3u 模式下选第 K 条线路(0 起)，默认 0
     --title T       自定义 PotPlayer 窗口标题，默认用房间名(主播名)
     --mode MODE     打开方式，默认 serve:
-                      serve  本地转流代理(推荐)：固定地址，自动跨 2 分钟断流自愈
-                      m3u    多线路播放列表：卡住时在 PotPlayer 播放列表切备用线路
-                      direct 单条 flv 直链：最简单，卡住无法恢复
-                      print  只解析打印各清晰度地址，不打开播放器
+                      serve      本地转流代理(推荐)：固定地址，自动跨 2 分钟断流自愈
+                      serve-only 只起代理、不拉起 PotPlayer：用别的播放器手动连,默认常驻
+                      m3u        多线路播放列表：卡住时在 PotPlayer 播放列表切备用线路
+                      direct     单条 flv 直链：最简单，卡住无法恢复
+                      print      只解析打印各清晰度地址，不打开播放器
     --port P        serve 模式端口，默认 8787
 
 PotPlayer 路径:环境变量 POTPLAYER 优先，否则自动探测默认安装位置 / Scoop。
@@ -156,7 +157,8 @@ def main():
     ap.add_argument("--line", type=int, default=0)
     ap.add_argument("--title", default=None)
     ap.add_argument(
-        "--mode", default="serve", choices=["serve", "m3u", "direct", "print"]
+        "--mode", default="serve",
+        choices=["serve", "serve-only", "m3u", "direct", "print"],
     )
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument(
@@ -212,10 +214,13 @@ def play_room(url, a):
         )
         return 0
 
-    # serve 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进本地地址的
-    # query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
+    # serve / serve-only 模式:优先复用已有代理，否则在空闲端口新起。房间与清晰度都写进
+    # 本地地址 query（?room=&quality=），故复用别处已在跑的代理时也按本次请求解析、不受其启动参数限制。
+    launch = a.mode == "serve"  # serve-only:只起代理、不拉起 PotPlayer(用别的播放器手动连)
     port, reuse = _choose_port(a.port)
     local = _serve_url(port, url, a.quality)
+    # serve-only 没有播放器生命周期可挂靠,空闲自动退出没意义(你随时可能连)→ 强制常驻
+    grace = a.grace if launch else 0
 
     srv = None
     if reuse:
@@ -229,21 +234,22 @@ def play_room(url, a):
                 url,
                 str(port),
                 a.quality or "",
-                str(a.grace),
+                str(grace),
             ]
         )
         if not _wait_ready(port):
-            print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")
+            print("警告:本地代理未在预期时间内就绪。" + ("仍尝试打开播放器。" if launch else ""))
         print(f"本地代理已启动 (PID {srv.pid}，端口 {port})。")
 
-    # 本地代理已带好平台头;标题用 PotPlayer 的「地址\\标题」语法。
-    # 断流自愈全在代理里，PotPlayer 无感。
-    _open_potplayer(local, title, is_url=True)
+    # 本地代理已带好平台头;标题用 PotPlayer 的「地址\\标题」语法。断流自愈全在代理里。
+    if launch:
+        _open_potplayer(local, title, is_url=True)  # serve-only 跳过,只给出地址
     print(f"地址:{local}")
 
     if reuse:
         return 0  # 不占管现有代理，开完即返回
-    print("直播断流由服务器自动重解析续播，播放器无感。Ctrl+C 结束。")
+    tail = "播放器无感。" if launch else "用播放器连上面地址即可。"
+    print(f"直播断流由服务器自动重解析续播，{tail}Ctrl+C 结束。")
     try:
         srv.wait()
     except KeyboardInterrupt:

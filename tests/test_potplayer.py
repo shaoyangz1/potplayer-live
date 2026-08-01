@@ -555,6 +555,60 @@ class TestPlayRoomNoStreams(unittest.TestCase):
         self.assertIn("flv", str(ctx.exception))
 
 
+class TestServeOnlyMode(unittest.TestCase):
+    """serve-only:只起代理不拉起 PotPlayer,且强制常驻(grace=0);serve 对照组仍开播放器。"""
+
+    def _make_args(self, mode):
+        import types
+        return types.SimpleNamespace(quality=None, mode=mode, line=0,
+                                     title=None, port=8787, grace=180)
+
+    def _run(self, mode):
+        """驱动 play_room 的 serve/serve-only 分支,拦掉所有触网/触外设点,
+        返回 (是否开了播放器, 传给 server 的 grace 参数)。"""
+        import types
+        opened = []
+        popen_argv = []
+
+        class _FakeSrv:
+            pid = 123
+            def wait(self): pass
+            def terminate(self): pass
+
+        saved = (sites.parse, cli._choose_port, cli._wait_ready,
+                 cli._open_potplayer, cli.subprocess.Popen)
+        sites.parse = lambda url: {"rid": "1", "nick": "n", "title": "t", "living": True,
+                                   "streams": {"原画": {"quality": 10000, "url": "u", "backups": []}}}
+        cli._choose_port = lambda base: (base, False)   # 新起(非复用),不真扫端口
+        cli._wait_ready = lambda port, timeout=10.0: True
+        cli._open_potplayer = lambda *a, **kw: opened.append(a)
+        def _fake_popen(argv):
+            popen_argv.append(argv)
+            return _FakeSrv()
+        cli.subprocess.Popen = _fake_popen
+        import builtins
+        orig_print = builtins.print
+        builtins.print = lambda *a, **kw: None
+        try:
+            cli.play_room("https://live.bilibili.com/1", self._make_args(mode))
+        finally:
+            builtins.print = orig_print
+            (sites.parse, cli._choose_port, cli._wait_ready,
+             cli._open_potplayer, cli.subprocess.Popen) = saved
+        grace = popen_argv[0][-1]  # server 位置参数末位 = 宽限秒数
+        return bool(opened), grace
+
+    def test_serve_opens_player_and_keeps_grace(self):
+        opened, grace = self._run("serve")
+        self.assertTrue(opened)          # serve 开播放器
+        self.assertEqual(grace, "180")   # 用户 grace 原样透传
+
+    def test_serve_only_skips_player_and_forces_permanent(self):
+        opened, grace = self._run("serve-only")
+        self.assertFalse(opened)         # serve-only 不开播放器
+        self.assertEqual(grace, "0")     # 强制常驻
+
+
 class TestDouyuAuth(unittest.TestCase):
     """auth 用独立参考实现比对(不锁魔数),重点验证 enc_time 迭代次数与 is_special/salt 分支。"""
 
