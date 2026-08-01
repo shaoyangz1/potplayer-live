@@ -67,6 +67,7 @@ uv run -m potplayer_live https://live.douyin.com/123456
 ## 常用选项
 
 ```
+--room_id URL 直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)
 --quality Q   清晰度显示名或码率(如 "原画" / 蓝光10M / 2000),默认最高
 --line K      direct/m3u 选第 K 条线路(0 起),默认 0
 --title T     自定义 PotPlayer 窗口标题,默认用房间名(主播名)

@@ -4,6 +4,7 @@
     python -m potplayer_live <房间地址> [选项]
 
 选项:
+    --room_id URL   直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)
     --quality Q     清晰度显示名或码率(如 "原画" / 蓝光10M / 2000)，默认最高
     --line K        直链/m3u 模式下选第 K 条线路(0 起)，默认 0
     --title T       自定义 PotPlayer 窗口标题，默认用房间名(主播名)
@@ -155,6 +156,11 @@ def main():
         default=None,
         help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456);--mode serve-only 可省",
     )
+    ap.add_argument(
+        "--room_id",
+        default=None,
+        help="直播间地址,与位置参数等价的命名写法(如 --room_id https://live.bilibili.com/24678311)",
+    )
     ap.add_argument("--quality", default=None)
     ap.add_argument("--line", type=int, default=0)
     ap.add_argument("--title", default=None)
@@ -170,18 +176,19 @@ def main():
         help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180",
     )
     a = ap.parse_args()
-    if a.url is None and a.mode != "serve-only":
-        ap.error("需要房间地址(仅 --mode serve-only 可省，起纯代理)")
-    return play_room(a.url, a)
+    room = a.room_id or a.url  # --room_id 与位置参数等价,任一即可(serve-only 都可省)
+    if room is None and a.mode != "serve-only":
+        ap.error("需要房间地址(位置参数或 --room_id;仅 --mode serve-only 可省)")
+    return play_room(room, a)
 
 
-def _serve_only(url, a):
+def _serve_only(a):
     """只起常驻代理,不解析房间、不拉起 PotPlayer。
 
-    纯中转:room 省则无默认房间,launcher 各自带 ?room= 播不同房间(裸连 /live.flv
-    会报错,不绑任何直播)。所有断流/转流日志都打印在本进程——一处 server 常驻,别处
-    用 --mode serve 复用它来播放(那些命令行只打印复用提示,日志集中在这里),方便同时
-    从多个命令行启动多个播放。"""
+    纯中转:不绑任何房间(即便给了 --room_id/地址也忽略,只生效 serve-only 语义),
+    launcher 各自带 ?room= 播不同房间(裸连 /live.flv 会报错)。所有断流/转流日志都
+    打印在本进程——一处 server 常驻,别处用 --mode serve 复用它来播放(那些命令行只
+    打印复用提示,日志集中在这里),方便同时从多个命令行启动多个播放。"""
     port, reuse = _choose_port(a.port)
     if reuse:
         print(f"已有代理在端口 {port} 运行,无需重复起(用 --port 指定别的端口可再起一个)。")
@@ -191,7 +198,7 @@ def _serve_only(url, a):
             sys.executable,
             "-m",
             "potplayer_live.server",
-            url or "",   # 空串 = server 用内置默认房间(见 server.__main__);launcher 都带 ?room=
+            "",          # 纯中转:不绑房间(server 收到空串即无默认,裸连报错);launcher 都带 ?room=
             str(port),
             a.quality or "",
             "0",         # 纯代理强制常驻:没有播放器生命周期可挂靠,空闲自动退出没意义
@@ -211,7 +218,7 @@ def _serve_only(url, a):
 
 def play_room(url, a):
     if a.mode == "serve-only":
-        return _serve_only(url, a)  # 纯代理:不解析、不开播放器,room 可省
+        return _serve_only(a)  # 纯中转:忽略房间,不解析、不开播放器
     info = sites.parse(url)
     print(f"房间号 : {info['rid']}")
     print(f"主播   : {info['nick']}")

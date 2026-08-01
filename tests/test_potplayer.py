@@ -601,16 +601,16 @@ class TestServeOnlyMode(unittest.TestCase):
              cli._open_potplayer, cli.subprocess.Popen) = saved
         return rec, restore
 
-    def test_serve_only_bare_proxy(self):
-        # 不解析房间、不开播放器、room 省则传空串、grace 强制 0
+    def test_serve_only_bare_proxy_ignores_room(self):
+        # 纯中转:即便传了房间也忽略、不解析、不开播放器、传空串给 server、grace 强制 0
         rec, restore = self._patch()
         try:
-            cli.play_room(None, self._args("serve-only"))
+            cli.play_room("https://live.bilibili.com/1", self._args("serve-only"))
         finally:
             restore()
         self.assertEqual(rec["parsed"], [])       # 未解析
         self.assertFalse(rec["opened"])           # 未开播放器
-        self.assertEqual(rec["popen"][0][3], "")  # room 空串(url=None)
+        self.assertEqual(rec["popen"][0][3], "")  # room 空串(忽略传入地址,纯中转)
         self.assertEqual(rec["popen"][0][-1], "0")  # 强制常驻
 
     def test_serve_only_reuse_reports_and_exits(self):
@@ -649,6 +649,19 @@ class TestServeOnlyMode(unittest.TestCase):
                 cli.main()
         finally:
             _sys.argv, cli.play_room = saved_argv, saved_play
+
+    def test_room_id_flag_equivalent_to_positional(self):
+        # --room_id 与位置参数等价:都作为房间地址喂给 play_room,mode 默认 serve
+        import sys as _sys
+        saved_argv, saved_play = _sys.argv, cli.play_room
+        got = []
+        cli.play_room = lambda url, a: (got.append((url, a.mode)) or 0)
+        try:
+            _sys.argv = ["prog", "--room_id", "https://live.bilibili.com/24678311"]
+            cli.main()
+        finally:
+            _sys.argv, cli.play_room = saved_argv, saved_play
+        self.assertEqual(got[0], ("https://live.bilibili.com/24678311", "serve"))
 
 
 class TestDouyuAuth(unittest.TestCase):
