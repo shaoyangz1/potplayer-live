@@ -47,12 +47,14 @@ def resolve_room(short, fetch=_get_json):
 
 
 def _room_meta(rid, fetch=_get_json):
-    """取标题/主播名(getInfoByRoom);title 缺失回退主播名。"""
-    d = fetch(
-        f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={rid}"
-    )["data"]
-    nick = (d.get("anchor_info") or {}).get("base_info", {}).get("uname")
-    title = (d.get("room_info") or {}).get("title") or nick
+    """取标题/主播名;title 缺失回退主播名。
+
+    getInfoByRoom 已被风控(-352,需 wbi/登录),改用免签名的 get_info 拿
+    标题+uid,再 Master/info 按 uid 拿主播名。"""
+    gi = fetch(f"https://api.live.bilibili.com/room/v1/Room/get_info?room_id={rid}")["data"]
+    m = fetch(f"https://api.live.bilibili.com/live_user/v1/Master/info?uid={gi['uid']}")["data"]
+    nick = (m.get("info") or {}).get("uname")
+    title = gi.get("title") or nick
     return nick, title
 
 

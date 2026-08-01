@@ -673,15 +673,20 @@ class TestBiliResolveRoom(unittest.TestCase):
 
 
 class TestBiliRoomMeta(unittest.TestCase):
+    """_room_meta 走 get_info + Master/info 两次请求,按 url 分派假响应。"""
+
+    def _fetch(self, title="标题", uname="主播"):
+        def f(url):
+            if "get_info" in url:
+                return {"data": {"title": title, "uid": 999}}
+            return {"data": {"info": {"uname": uname}}}
+        return f
+
     def test_title_and_nick(self):
-        fake = {"data": {"room_info": {"title": "标题"},
-                         "anchor_info": {"base_info": {"uname": "主播"}}}}
-        self.assertEqual(bilibili._room_meta(1, fetch=lambda u: fake), ("主播", "标题"))
+        self.assertEqual(bilibili._room_meta(1, fetch=self._fetch()), ("主播", "标题"))
 
     def test_title_falls_back_to_nick(self):
-        fake = {"data": {"room_info": {"title": ""},
-                         "anchor_info": {"base_info": {"uname": "主播"}}}}
-        self.assertEqual(bilibili._room_meta(1, fetch=lambda u: fake), ("主播", "主播"))
+        self.assertEqual(bilibili._room_meta(1, fetch=self._fetch(title="")), ("主播", "主播"))
 
 
 class TestBiliStreamsFromPlayinfo(unittest.TestCase):
