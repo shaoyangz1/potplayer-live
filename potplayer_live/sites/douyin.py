@@ -68,12 +68,16 @@ def _parse_enter(payload: dict, web_rid: str) -> dict:
     if not info["living"]:
         return info
     su = room.get("stream_url", {}) or {}
-    sdk = su.get("live_core_sdk_data", {}).get("pull_data", {})
+    sdk = (su.get("live_core_sdk_data") or {}).get("pull_data", {})
     quals = sdk.get("options", {}).get("qualities") or []
-    if quals and sdk.get("stream_data"):
-        flv_map = json.loads(sdk["stream_data"]).get("data", {})
+    try:
+        flv_map = json.loads(sdk["stream_data"]).get("data", {}) if quals and sdk.get("stream_data") else None
+    except (json.JSONDecodeError, KeyError):
+        flv_map = None  # 非法 JSON:清空 quals 使下面走回退分支
+        quals = []
+    if quals and flv_map is not None:
         for q in quals:
-            url = flv_map.get(q.get("sdk_key"), {}).get("main", {}).get("flv")
+            url = (flv_map.get(q.get("sdk_key")) or {}).get("main", {}).get("flv")
             if url:
                 info["streams"][q["name"]] = {
                     "quality": q.get("v_bit_rate", 0),

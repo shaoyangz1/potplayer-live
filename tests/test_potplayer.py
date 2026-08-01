@@ -10,6 +10,7 @@ serve 代理的按请求 room/quality 解析、cli 的就绪轮询。
 
 import base64
 import hashlib
+import json as _json
 import unittest
 import urllib.parse
 
@@ -534,9 +535,6 @@ class TestChooseIndex(unittest.TestCase):
         self.assertIsNone(cli._choose_index(5, True, input_fn=boom))
 
 
-import json as _json
-
-
 def _enter(status=2, with_sdk=True):
     room = {"status": status, "title": "早安", "owner": {"nickname": "主播A"}}
     stream_url = {
@@ -595,6 +593,15 @@ class TestDouyinParseEnter(unittest.TestCase):
         self.assertTrue(info["living"])
         self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
         self.assertEqual(info["streams"]["高清"]["url"], "http://x/hd.flv")
+        self.assertEqual(info["streams"]["原画"]["backups"], [])
+
+    def test_invalid_stream_data_falls_back_to_flv_pull_url(self):
+        # stream_data 非法 JSON 时不应崩溃,应回退到 flv_pull_url
+        p = _enter(with_sdk=True)
+        p["data"]["data"][0]["stream_url"]["live_core_sdk_data"]["pull_data"]["stream_data"] = "NOT_JSON"
+        info = douyin._parse_enter(p, "1")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
 
 
 class TestDouyinDispatch(unittest.TestCase):
