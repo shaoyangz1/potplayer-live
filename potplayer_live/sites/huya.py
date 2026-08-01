@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """虎牙(huya.com)平台解析模块。
 
-平台模块统一接口(见 sites.py):
+平台模块统一接口(见 sites/__init__.py):
     DOMAINS        匹配的域名关键字
     PLAY_HEADERS   拉流时用的 HTTP 头(Referer/User-Agent)
     parse(url)     -> {rid, nick, title, living, streams{清晰度:{quality,url,backups}}}
@@ -13,7 +13,7 @@ import random
 import base64
 import urllib.parse
 
-from common import http_get, http_get_text, decode_text, md5
+from ..common import http_get, http_get_text, decode_text, md5
 
 # 本模块的域名与拉流头
 DOMAINS = ["huya.com"]

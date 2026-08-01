@@ -7,7 +7,7 @@
 自动关闭: 客户端断开后,若在宽限期(默认 180 秒)内无新连接则进程自动退出,
 避免关掉播放器后代理空占端口常驻。设 GRACE<=0 可关闭该行为(保持常驻)。
 
-用法: python server.py <房间地址> [端口=8787] [清晰度] [宽限秒数=180]
+用法: python -m potplayer_live.server <房间地址> [端口=8787] [清晰度] [宽限秒数=180]
 """
 import sys
 import time
@@ -16,8 +16,8 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import sites
-from common import pick
+from . import sites
+from .common import pick
 
 # 全局配置:导入时用安全默认(模块可无副作用导入、便于测试),main 块再从命令行覆盖。
 ROOM = "https://www.huya.com/lpl"   # 默认房间(未带 ?room= 的请求回退到它)

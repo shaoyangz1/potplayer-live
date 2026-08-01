@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """potplayer-live 命令行入口(PotPlayer 专用)。
 
-    python cli.py <房间地址> [选项]
+    python -m potplayer_live <房间地址> [选项]
 
 选项:
     --quality Q     清晰度显示名或码率(如 "原画" / 蓝光10M / 2000)，默认最高
@@ -27,9 +27,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import sites
-import common
+from . import sites, common
 
 PORT_SCAN = 20   # 从 --port 起最多向后扫描多少个端口
 
@@ -201,7 +199,7 @@ def browse_category(a):
     idx = _choose_index(len(rooms), interactive)
     if idx is None:
         if not interactive:
-            print("非交互模式:复制上面的地址直接跑,如 python cli.py https://www.huya.com/<房间>")
+            print("非交互模式:复制上面的地址直接跑,如 python -m potplayer_live https://www.huya.com/<房间>")
         return 0
     return play_room(f"https://www.huya.com/{rooms[idx]['room']}", a)
 
@@ -253,8 +251,7 @@ def play_room(url, a):
     if reuse:
         print(f"复用已有代理 (端口 {port})，无需新起。")
     else:
-        here = os.path.dirname(os.path.abspath(__file__))
-        srv = subprocess.Popen([sys.executable, os.path.join(here, "server.py"),
+        srv = subprocess.Popen([sys.executable, "-m", "potplayer_live.server",
                                 url, str(port), a.quality or "", str(a.grace)])
         if not _wait_ready(port):
             print("警告:本地代理未在预期时间内就绪，仍尝试打开播放器。")

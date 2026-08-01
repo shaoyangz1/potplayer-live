@@ -39,8 +39,8 @@ The self-healing proxy catches `ConnectionAbortedError` (WSAECONNABORTED / WinEr
 Given a category instead of a room, list its live rooms and pick one to play:
 
 ```bash
-python cli.py https://www.huya.com/g/lol   # category page URL
-python cli.py 英雄联盟 / lol / 1             # Chinese name / alias / gid
+uv run -m potplayer_live https://www.huya.com/g/lol   # category page URL
+uv run -m potplayer_live 英雄联盟 / lol / 1             # Chinese name / alias / gid
 ```
 
 Categories resolve via `bussLive` (name/alias → gid) and rooms are scraped from
@@ -51,7 +51,7 @@ pages to fetch (~9 rooms each, default 3).
 ## Usage
 
 ```bash
-uv run --python 3.12 cli.py https://www.huya.com/lpl [options]
+uv run -m potplayer_live https://www.huya.com/lpl [options]
 ```
 
 Supports room aliases, numeric IDs, quality selection, and custom titles.

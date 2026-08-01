@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """平台派发层:按 URL 域名找到对应平台模块并解析。
 
-新增平台 = 写一个模块(实现下面的接口)+ 在 SITES 里登记,server.py / cli.py 无需改动。
+新增平台 = 在本包内写一个模块(实现下面的接口)+ 在 SITES 里登记,server / cli 无需改动。
 
 平台模块接口:
     DOMAINS       list[str]   匹配的域名关键字(如 ["huya.com"])
@@ -10,7 +10,7 @@
 """
 import urllib.parse
 
-import huya
+from . import huya
 
 # 已支持的平台模块(按需追加,如 douyu、bilibili)
 SITES = [huya]

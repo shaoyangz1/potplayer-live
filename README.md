@@ -8,16 +8,25 @@ PotPlayer 播放,并修复虎牙 flv **约 2 分钟断流**的问题。
 ## 依赖
 
 - Windows + [PotPlayer](https://potplayer.daum.net/)(或 `scoop install potplayer`)
-- Python ≥ 3.9(推荐用 [uv](https://github.com/astral-sh/uv) 跑,纯标准库、无第三方依赖)
+- [uv](https://github.com/astral-sh/uv)(纯标准库、无第三方依赖;Python 3.14 由 uv 自动装好)
+
+安装 uv:
+
+```powershell
+# Windows(PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# 或
+scoop install uv
+```
 
 ## 快速开始
 
 ```bash
 # 推荐:serve 模式(本地代理,自动跨断流自愈)
-uv run --python 3.12 cli.py https://www.huya.com/lpl
+uv run -m potplayer_live https://www.huya.com/lpl
 
 # 或直接用 python
-python cli.py https://www.huya.com/lpl
+python -m potplayer_live https://www.huya.com/lpl
 ```
 
 ## 浏览分区(挑房间看)
@@ -25,10 +34,10 @@ python cli.py https://www.huya.com/lpl
 不知道看哪个房间时,给一个分区,列出正在直播的房间,选序号直接看:
 
 ```bash
-python cli.py https://www.huya.com/g/lol   # 分区页地址
-python cli.py 英雄联盟                       # 中文名
-python cli.py lol                            # 别名
-python cli.py 1                              # 分区 gid
+uv run -m potplayer_live https://www.huya.com/g/lol   # 分区页地址
+uv run -m potplayer_live 英雄联盟   # 中文名
+uv run -m potplayer_live lol        # 别名
+uv run -m potplayer_live 1          # 分区 gid
 ```
 
 列出后输入序号(回车看第 1 个,q 退出)即复用 serve 流程播放。
@@ -80,7 +89,7 @@ set POTPLAYER=D:\Apps\PotPlayer\PotPlayerMini64.exe
 纯标准库、不触网,直接跑:
 
 ```bash
-python -m unittest test_potplayer -v
+uv run -m unittest tests.test_potplayer
 ```
 
 覆盖清晰度选择、m3u 生成、虎牙签名(uid 移位 / wsSecret)、serve 代理的按请求

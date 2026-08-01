@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """potplayer-live 测试(标准库 unittest，零依赖,不触网)。
 
-    python -m unittest test_potplayer -v
-    # 或
-    python test_potplayer.py
+    uv run -m unittest discover -s tests
 
 覆盖:清晰度选择、m3u 生成、虎牙签名(uid 移位/wsSecret)、
 serve 代理的按请求 room/quality 解析、cli 的就绪轮询。
@@ -11,17 +9,11 @@ serve 代理的按请求 room/quality 解析、cli 的就绪轮询。
 """
 import base64
 import hashlib
-import os
-import sys
 import unittest
 import urllib.parse
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import common
-import huya
-import server
-import cli
-import sites
+from potplayer_live import common, server, cli, sites
+from potplayer_live.sites import huya
 
 
 def _stream(quality, url="u0", backups=("u1", "u2")):
