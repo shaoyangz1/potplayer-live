@@ -68,7 +68,7 @@ uv run -m potplayer_live https://live.douyin.com/category/英雄联盟
 --title T     自定义 PotPlayer 窗口标题,默认用房间名(主播名)
 --port P      serve 模式端口,默认 8787
 --grace S     serve 模式无连接空闲 S 秒后自动退出,<=0 常驻,默认 180
---pages N     分区浏览抓取页数(每页约 9 个房间),默认 3
+--pages N     分区浏览抓取页数,默认 3
 ```
 
 房间地址支持别名(`https://www.huya.com/lpl`)与纯房间号(`https://www.huya.com/660000`)。

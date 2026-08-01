@@ -167,7 +167,7 @@ def main():
         help="serve 模式:无连接空闲多少秒后自动退出，<=0 常驻，默认 180",
     )
     ap.add_argument(
-        "--pages", type=int, default=3, help="分区浏览抓取页数(每页约 9 个房间)，默认 3"
+        "--pages", type=int, default=3, help="分区浏览抓取页数，默认 3"
     )
     a = ap.parse_args()
     if sites.is_category(a.url):
@@ -199,9 +199,8 @@ def browse_category(a):
     rooms = data["rooms"]
     if not rooms:
         print(
-            f"没解析到「{data['name']}」的房间。可能:分区无人直播,或分区名/别名打错"
-            f"(可改用分区页地址 https://www.huya.com/g/<别名> 或 gid)。"
-            f"看单个房间请直接给完整地址 https://www.huya.com/<房间>。"
+            f"没解析到「{data['name']}」的房间。可能:分区无人直播,或分区名/别名/id 打错。"
+            f"看单个房间请直接给完整直播间地址。"
         )
         return 1
     interactive = sys.stdin.isatty()
@@ -215,7 +214,7 @@ def browse_category(a):
     if idx is None:
         if not interactive:
             print(
-                "非交互模式:复制上面的地址直接跑,如 python -m potplayer_live https://www.huya.com/<房间>"
+                "非交互模式:复制上面的地址直接跑,如 python -m potplayer_live <直播间地址>"
             )
         return 0
     return play_room(rooms[idx]["url"], a)
@@ -232,6 +231,9 @@ def play_room(url, a):
         return 1
 
     name, stream = common.pick(info, a.quality)
+    if stream is None:
+        print("该直播间未取到可播放的 flv 流(可能仅提供 HLS 或流结构异常)。")
+        return 1
     title = a.title or info["nick"] or info["title"]  # 默认用房间名(主播名)
     urls = [stream["url"]] + stream["backups"]
     flv = urls[a.line % len(urls)]

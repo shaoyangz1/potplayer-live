@@ -603,6 +603,33 @@ class TestDouyinParseEnter(unittest.TestCase):
         self.assertTrue(info["living"])
         self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
 
+    def test_pull_data_null_falls_back_to_flv_pull_url(self):
+        # pull_data 为 null 时不应 AttributeError,应回退到 flv_pull_url
+        p = _enter(with_sdk=False)
+        p["data"]["data"][0]["stream_url"]["live_core_sdk_data"] = {"pull_data": None}
+        info = douyin._parse_enter(p, "1")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
+
+    def test_options_null_falls_back_to_flv_pull_url(self):
+        # options 为 null 时不应 AttributeError,应回退到 flv_pull_url
+        p = _enter(with_sdk=False)
+        p["data"]["data"][0]["stream_url"]["live_core_sdk_data"] = {
+            "pull_data": {"options": None}
+        }
+        info = douyin._parse_enter(p, "1")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["streams"]["原画"]["url"], "http://x/full.flv")
+
+    def test_living_true_but_no_flv_streams_empty(self):
+        # living=True 但无 sdk 也无 flv_pull_url → streams 为空 dict(不崩)
+        payload = {"data": {"data": [{"status": 2, "title": "t",
+                                      "stream_url": {}}],
+                            "user": {"nickname": "n"}}}
+        info = douyin._parse_enter(payload, "1")
+        self.assertTrue(info["living"])
+        self.assertEqual(info["streams"], {})
+
 
 class TestDouyinDispatch(unittest.TestCase):
     def test_get_site_routes_to_douyin(self):
@@ -702,6 +729,47 @@ class TestDouyinCategoryDispatch(unittest.TestCase):
         self.assertEqual(
             sites.category_slug("https://live.douyin.com/category/720,1"), "720,1"
         )
+
+
+class TestPlayRoomNoStreams(unittest.TestCase):
+    """living=True 但 streams={} 时 cli/server 不崩、给出提示/抛错。"""
+
+    def _make_args(self, quality=None, mode="serve", line=0):
+        import types
+        a = types.SimpleNamespace(quality=quality, mode=mode, line=line,
+                                  title=None, port=8787, grace=180, pages=3)
+        return a
+
+    def test_cli_prints_message_and_returns_nonzero(self):
+        # living 但 streams 空 → pick 返回 (None,None) → cli 打印提示并 return 1
+        printed = []
+        orig_parse = sites.parse
+        orig_print = cli.__builtins__["print"] if isinstance(cli.__builtins__, dict) else None
+
+        import builtins
+        orig_print = builtins.print
+        builtins.print = lambda *a, **kw: printed.append(" ".join(str(x) for x in a))
+        sites.parse = lambda url: {"rid": "1", "nick": "n", "title": "t",
+                                   "living": True, "streams": {}}
+        try:
+            ret = cli.play_room("https://live.douyin.com/1", self._make_args())
+        finally:
+            builtins.print = orig_print
+            sites.parse = orig_parse
+        self.assertEqual(ret, 1)
+        self.assertTrue(any("flv" in m for m in printed), f"未见 flv 提示: {printed}")
+
+    def test_server_resolve_lines_raises_on_empty_streams(self):
+        # living 但 streams 空 → server.resolve_lines 抛 RuntimeError
+        orig_parse = sites.parse
+        sites.parse = lambda url: {"rid": "1", "nick": "n", "title": "t",
+                                   "living": True, "streams": {}}
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                server.resolve_lines("https://live.douyin.com/1")
+        finally:
+            sites.parse = orig_parse
+        self.assertIn("flv", str(ctx.exception))
 
 
 if __name__ == "__main__":

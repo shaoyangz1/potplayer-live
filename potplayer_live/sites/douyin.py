@@ -77,7 +77,7 @@ def _parse_enter(payload: dict, web_rid: str) -> dict:
     user = d.get("user", {}) or {}
     info = {
         "rid": web_rid,
-        "nick": user.get("nickname") or room.get("owner", {}).get("nickname"),
+        "nick": user.get("nickname") or (room.get("owner") or {}).get("nickname"),
         "title": room.get("title"),
         "living": room.get("status") == 2,
         "streams": {},
@@ -85,8 +85,9 @@ def _parse_enter(payload: dict, web_rid: str) -> dict:
     if not info["living"]:
         return info
     su = room.get("stream_url", {}) or {}
-    sdk = (su.get("live_core_sdk_data") or {}).get("pull_data", {})
-    quals = sdk.get("options", {}).get("qualities") or []
+    # pull_data/options 均可为显式 null,用 or {} 而非 .get(...,{}) 防 AttributeError
+    sdk = (su.get("live_core_sdk_data") or {}).get("pull_data") or {}
+    quals = (sdk.get("options") or {}).get("qualities") or []
     try:
         flv_map = json.loads(sdk["stream_data"]).get("data", {}) if quals and sdk.get("stream_data") else None
     except (json.JSONDecodeError, KeyError):

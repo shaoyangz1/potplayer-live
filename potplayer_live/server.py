@@ -78,6 +78,8 @@ def resolve_lines(room, quality=None):
     if not info["living"]:
         raise RuntimeError("未开播")
     _, s = pick(info, quality)
+    if s is None:
+        raise RuntimeError("未取到可播放的 flv 流(可能仅提供 HLS 或流结构异常)")
     return [s["url"]] + s["backups"], info["title"], sites.play_headers(room)
 
 
