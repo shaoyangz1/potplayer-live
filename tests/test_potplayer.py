@@ -636,6 +636,12 @@ class TestDouyinResolvePartition(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             douyin.resolve_partition("不存在的分区")
 
+    def test_non_integer_comma_raises_runtime_error_with_hint(self):
+        # "abc,def" 有逗号但不是整数对,应抛 RuntimeError(含引导提示),而非 ValueError
+        with self.assertRaises(RuntimeError) as ctx:
+            douyin.resolve_partition("abc,def")
+        self.assertIn("720,1", str(ctx.exception))  # 提示应含数字示例
+
 
 def _dy_room(web_rid, nick, viewers, title):
     return {
@@ -676,6 +682,15 @@ class TestDouyinListCategory(unittest.TestCase):
             if offset == 0 else {"data": {"data": []}},
         )
         self.assertEqual([r["room"] for r in res["rooms"]], ["a"])
+
+    def test_parse_rooms_stats_null_does_not_crash(self):
+        # API 可能返回 "stats": null,不应 AttributeError,viewers 回退为 None
+        payload = {"data": {"data": [{"web_rid": "999", "room": {
+            "title": "t", "owner": {"nickname": "n"}, "stats": None
+        }}]}}
+        rooms = douyin._parse_rooms(payload)
+        self.assertEqual(len(rooms), 1)
+        self.assertIsNone(rooms[0]["viewers"])  # null stats → viewers 为 None,不崩溃
 
 
 class TestDouyinCategoryDispatch(unittest.TestCase):

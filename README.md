@@ -1,6 +1,6 @@
 # potplayer-live
 
-用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com)的真实直播流地址,交给
+用 **PotPlayer** 看直播:解析直播平台(当前支持虎牙 huya.com、抖音 live.douyin.com)的真实直播流地址,交给
 PotPlayer 播放,并修复虎牙 flv **约 2 分钟断流**的问题。
 
 只针对 PotPlayer:平台解析在后台完成,给 PotPlayer 一个稳定地址来播放。
@@ -22,8 +22,11 @@ scoop install uv
 ## 快速开始
 
 ```bash
-# 推荐:serve 模式(本地代理,自动跨断流自愈)
+# 虎牙(推荐:serve 模式,本地代理,自动跨断流自愈)
 uv run -m potplayer_live https://www.huya.com/lpl
+
+# 抖音
+uv run -m potplayer_live https://live.douyin.com/123456
 
 # 或直接用 python
 python -m potplayer_live https://www.huya.com/lpl
@@ -34,10 +37,15 @@ python -m potplayer_live https://www.huya.com/lpl
 不知道看哪个房间时,给一个分区,列出正在直播的房间,选序号直接看:
 
 ```bash
-uv run -m potplayer_live https://www.huya.com/g/lol   # 分区页地址
-uv run -m potplayer_live 英雄联盟   # 中文名
-uv run -m potplayer_live lol        # 别名
-uv run -m potplayer_live 1          # 分区 gid
+# 虎牙分区(分区页地址 / 中文名 / 别名 / gid)
+uv run -m potplayer_live https://www.huya.com/g/lol
+uv run -m potplayer_live 英雄联盟
+uv run -m potplayer_live lol
+uv run -m potplayer_live 1
+
+# 抖音分区(partition_id,partition_type;或中文别名)
+uv run -m potplayer_live https://live.douyin.com/category/720,1
+uv run -m potplayer_live https://live.douyin.com/category/英雄联盟
 ```
 
 列出后输入序号(回车看第 1 个,q 退出)即复用 serve 流程播放。
@@ -95,6 +103,7 @@ potplayer_live/          # 主包
   sites/
     __init__.py          # 平台派发层(按域名路由)
     huya.py              # 虎牙解析:签名 / 分区目录 / 房间列表
+    douyin.py            # 抖音解析:ttwid cookie / enter 接口 / 分区房间
 tests/                   # 标准库 unittest,零依赖、不触网
 ```
 

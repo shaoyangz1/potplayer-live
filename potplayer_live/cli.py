@@ -150,7 +150,8 @@ def main():
     ap = argparse.ArgumentParser(prog="potplayer-live")
     ap.add_argument(
         "url",
-        help="直播间地址(如 https://www.huya.com/lpl),或分区(如 /g/lol、英雄联盟、lol)",
+        help="直播间地址(虎牙 https://www.huya.com/lpl、抖音 https://live.douyin.com/123456),"
+        "或分区(虎牙 /g/lol、英雄联盟、lol;抖音 https://live.douyin.com/category/720,1)",
     )
     ap.add_argument("--quality", default=None)
     ap.add_argument("--line", type=int, default=0)

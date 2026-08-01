@@ -134,8 +134,15 @@ def resolve_partition(ident):
     """
     ident = str(ident).strip()
     if "," in ident:
-        p, t = ident.split(",", 1)
-        return int(p), int(t), ident
+        try:
+            p, t = ident.split(",", 1)
+            return int(p), int(t), ident
+        except ValueError:
+            # 逗号存在但不是整数对(如 "abc,def"),引导改用数字 id
+            raise RuntimeError(
+                f"抖音分区「{ident}」格式不对。"
+                "请用 id,type 数字形式,如 https://live.douyin.com/category/720,1"
+            )
     if ident in ALIASES:
         p, t = ALIASES[ident]
         return p, t, ident
@@ -161,7 +168,8 @@ def _parse_rooms(payload: dict) -> list:
             {
                 "room": str(web_rid),
                 "nick": owner.get("nickname"),
-                "viewers": room.get("stats", {}).get("total_user_str"),
+                # stats 可能为 null(API 明确返回 null 而非省略),or {} 防 AttributeError
+                "viewers": (room.get("stats") or {}).get("total_user_str"),
                 "title": room.get("title"),
                 "url": ROOM_URL.format(web_rid=web_rid),
             }
