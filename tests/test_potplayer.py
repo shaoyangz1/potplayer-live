@@ -181,18 +181,6 @@ class TestParseRequest(unittest.TestCase):
         self.assertTrue(server.parse_request("/lpl.flv")[0])  # 给了别名=指定房间
 
 
-class TestRoomTag(unittest.TestCase):
-    """日志前缀标识:取房间号/别名,让一个代理服务多房间时日志可区分。"""
-
-    def test_slug_from_url(self):
-        self.assertEqual(server._room_tag("https://www.huya.com/lpl"), "lpl")
-        self.assertEqual(server._room_tag("https://live.douyin.com/123456"), "123456")
-        self.assertEqual(server._room_tag("https://live.bilibili.com/24678311"), "24678311")
-
-    def test_fallback_to_host_when_no_path(self):
-        self.assertEqual(server._room_tag("https://www.huya.com/"), "www.huya.com")
-
-
 class TestServeUrl(unittest.TestCase):
     """cli 生成的 serve 地址把 room/quality 写进 query,并与 server.parse_request 契约一致。"""
 

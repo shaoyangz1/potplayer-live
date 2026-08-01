@@ -34,15 +34,6 @@ def _origin_of(room: str) -> str:
     return f"{o.scheme}://{o.netloc}/" if o.netloc else "https://www.huya.com/"
 
 
-def _room_tag(room: str) -> str:
-    """房间地址→简短日志标识:取 path 末段(房间号/别名),空则回退 host。
-
-    一个代理可同时服务多个房间,日志按此标识区分是哪个房间的段。"""
-    p = urllib.parse.urlparse(room)
-    slug = p.path.strip("/").split("/")[-1]
-    return slug or p.netloc or room
-
-
 def room_from_path(path: str) -> str:
     """把请求路径解析成房间地址(按默认房间所在平台)。
 
@@ -131,7 +122,7 @@ def relay_flv(
     上游暂时不可用时退避重试(而非几次失败就放弃);仅当持续失败超过 retry_deadline 秒
     才干净退出,让端口被 watchdog 回收。客户端关播放器(write 抛 ConnectionError)则立即结束。
     write/flush/open_fn/resolve_fn/sleep_fn/clock 可注入,便于不触网测试。"""
-    tag = _room_tag(room)  # 日志前缀:一个代理服务多房间时按房间号区分各自的段
+    tag = room  # 日志前缀:一个代理服务多房间时按完整房间地址区分各自的段
     GAP = 40  # 段间隔(ms),仅换线/时钟跳变时用于接续
     WINDOW = 60000  # ms,原始 ts 相差在此以内视为“同一时钟”
     out_base = None  # 原始 ts -> 输出 ts 的偏移(让第 1 帧从 0 开始)
